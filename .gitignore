@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+coverage
+playwright-report
+test-results
+.storybound-test-data

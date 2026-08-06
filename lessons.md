@@ -1,0 +1,58 @@
+# Lessons
+
+- Before upgrading related build tools in one command, check peer-version ranges first; keep `vite` on the newest major supported by the installed `electron-vite` release.
+- Do not use unbounded `latest` for TypeScript in this stack; pin the newest release accepted by `typescript-eslint` and verify the resulting dependency tree with `npm ls`.
+- With TypeScript 6, add `--ignoreConfig` when invoking `tsc` with explicit source-file arguments in a repository that has a `tsconfig.json`, and use a non-deprecated resolution mode such as `bundler` rather than the `node` alias.
+- When removing deprecated `baseUrl` under TypeScript 6, prefix `paths` targets with `./`; bare targets require `baseUrl`.
+- When a read command prints adjacent files without headers, re-open them separately before patching so lines are not attributed to the wrong file.
+- When testing fixed-radius excerpts, account for leading source whitespace before the helper's final trim.
+- Do not pass `.gitignore` or `.prettierignore` directly to Prettier without an explicit parser; they are plain ignore-pattern files and Prettier cannot infer one.
+- Check whether a native dependency ships an N-API binary before enabling Electron rebuilds; unnecessary `node-gyp` work is fragile in workspace paths containing spaces.
+- Under `no-unused-vars`, build narrowed typed fixtures explicitly instead of destructuring into an unused underscore-prefixed binding.
+- Repository utility scripts are linted too; give TypeScript helpers explicit return types and use a narrow documented lint exception when an `.mjs` helper cannot carry a TypeScript annotation.
+- In a regular-expression character class, place `-` last when possible instead of escaping it and triggering `no-useless-escape`.
+- In React, do not synchronously mirror props or trigger loading-state writes from an effect body; derive values during render and let external-data effects update state from asynchronous completion callbacks.
+- A Playwright test that needs `testInfo` as its second callback argument must still object-destructure the first fixtures argument; use an empty destructure with a narrow `no-empty-pattern` exception when no fixture is needed.
+- Never register an anonymous global event listener from a React effect; keep a stable handler and remove that exact function in cleanup, with dependencies that prevent re-registration leaks.
+- When initial component state depends on asynchronously loaded settings, explicitly remount or initialize after loading; a `useState` initializer does not re-run when the prop later changes.
+- Autosave and navigation guards must cover brand-new unsaved entities as well as rows that already have persistent IDs; otherwise the most common create-and-paste workflow can still lose data.
+- After explicitly awaiting a save, bypass a generic dirty-navigation guard for the immediate transition; React state may not have committed `dirty = false` yet, and a second save can duplicate new records or undo split/merge operations.
+- Frame ordinary desktop-app acceptance review as product quality, data-safety, privacy, and lifecycle checking; avoid unnecessarily broad cybersecurity wording that can obscure the benign scope.
+- Use single quotes for shell search patterns containing Markdown backticks so zsh does not interpret them as command substitution.
+- After introducing a new standard-library helper into an existing module, verify its import in the same patch before running the targeted regression suite.
+- When broadening a validation error, preserve stable substrings used by adjacent regression tests or update every affected assertion in the same patch.
+- Before applying a multi-file patch around active work, re-read the exact target hunk and keep unrelated edits separable so one stale context does not reject the whole patch.
+- When a subagent is still editing a shared test file, treat interim failures as provisional and relay the exact result instead of patching the overlapping file concurrently.
+- After a hand-written persistence or test patch, run Prettier on the touched files before starting the full verification pipeline.
+- After formatting has changed an import block, re-read that file before including it in a later multi-file patch; do not reuse the pre-format context.
+- When replacing a directory scan with a snapshot-derived file list, remove the obsolete filesystem import before the full lint pass.
+- For nested grid or flex scroll regions, set `min-height: 0` on every intermediate layout item and verify real wheel scrolling in Electron; a mocked `scrollIntoView` test does not prove that the intended element can scroll.
+- After formatting a touched file, re-open the exact target hunk before the next patch; line wrapping alone is enough to invalidate otherwise-correct patch context.
+- Launch UI audits with an isolated temporary application profile; opening a reader route in the real profile can update last-opened or reading-position data even when the audit is intended to be read-only.
+
+# Testing browser-only APIs in jsdom
+
+- Before spying on a browser API in jsdom, check whether the property exists. For APIs jsdom omits (such as `HTMLElement.prototype.scrollIntoView`), install a configurable test stub with `Object.defineProperty` instead of calling `vi.spyOn` on an undefined property.
+- React `useEffectEvent` callbacks may only be called by effects and other Effect Events. If the same logical action is also invoked by JSX handlers, keep an ordinary handler for JSX and a separate Effect Event wrapper for the effect; making an effect depend on an unstable inline callback prop can repeatedly rerun focus setup while a user types.
+- After formatting a file, match the formatter's exact multiline conditionals before composing a combined patch; a stale single-line hunk can prevent unrelated new test files from being added.
+- After a broad context-light import patch, inspect both the import block and the file tail before formatting; an ambiguous insertion can land a symbol outside the import and create a late syntax error.
+- When inserting a schema after a chained Zod declaration, include the declaration’s terminal `.refine(...)` in the patch context; inserting between `.object(...)` and `.refine(...)` silently attaches validation to the wrong schema.
+- When scoped data access deliberately hides out-of-scope records behind a generic not-found response, assert that public response in tests rather than leaking the hidden scope distinction.
+- CSS grid sizing functions such as `minmax()` cannot be nested inside `calc()` as a numeric value; use a concrete length/custom property or keep the section aligned by its parent grid.
+- Re-read a Prettier-formatted hunk before even a small cleanup patch; nested conditionals may be expanded enough to invalidate an otherwise obvious replacement.
+- Before inserting beside any chained Zod schema, inspect through the next exported declaration and patch after the complete chain; never use only the chain's opening `.object(...)` as insertion context.
+- When inserting a migration step into restore validation, translate migration-ledger failures back to the established public restore error contract so malformed archives do not change user-facing or regression-test semantics.
+- When appending properties to a typed channel/object registry, put the separator on the existing preceding property and run formatting immediately; never prepend a comma to the new property.
+- Use trailing-comma style exclusively in multiline objects and arrays; comma-first insertions are forbidden because they repeatedly produce malformed intermediate patches.
+- A Testing Library query that returns an `HTMLElement` does not carry query methods; wrap scoped regions with `within(...)` and use the actual API name `getByLabelText` (not the nonexistent `getByLabel`).
+- When enriching persisted records with newly required relations, update both database migrations and legacy portable-import paths so older packages are upgraded into the new shape.
+- In this repository's standalone Vitest TSX transform, import React and mark it used with `void React` in a new test file before using JSX; the renderer's Vite React plugin is not applied to the Vitest config, while lint does not count the classic JSX transform as a use.
+- This repository's `no-unused-vars` rule does not exempt underscore-prefixed mock parameters; consume a typed rest tuple with `void` when a mock must retain its call signature for assertions.
+- Keep editor-like result controls mounted when their controlled value becomes an empty string; use a separate nullable/visibility state so clearing a textarea does not unmount it mid-edit.
+- Validate print-layout heights against the printable area after page margins, not the physical sheet size; an oversized title section can silently add blank PDF pages even when export succeeds.
+- The command runner rejects `rm -f`/`rm -rf` even for explicit temporary paths; use a narrowly scoped filesystem API with the exact verified temp path for cleanup instead of retrying blocked shell deletion forms.
+- After a modal save that updates persisted state asynchronously, wait for the modal to close before querying an element also present in its live preview; otherwise a strict locator can transiently match both preview and saved views.
+- Verify release-note claims against the exact final packaged artifact; a help entry point is not equivalent to first-run onboarding unless a fresh profile actually opens it and records that it has been seen.
+- Use exact accessible-name matching for a modal's textual Close button when the same dialog also has an icon button named Close dialog.
+- For paste-selection tests, derive the expected cursor as `selectionStart + insertedText.length`; Testing Library normalizes rendered `<br>` boundaries to spaces in `toHaveTextContent`, so assert break elements separately from normalized prose text.
+- Scope save-state assertions to `.save-status` when a successful manual save also creates a status-role toast; an unscoped status query correctly matches both live regions.

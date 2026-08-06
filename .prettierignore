@@ -1,0 +1,11 @@
+out
+dist
+pnpm-lock.yaml
+LICENSE.md
+tsconfig.json
+tsconfig.*.json
+node_modules
+coverage
+playwright-report
+test-results
+package-lock.json
