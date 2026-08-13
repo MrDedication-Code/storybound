@@ -12,6 +12,7 @@ Last updated: 6 August 2026
 6. **Reading workflow** — added responsive reader controls, local progress, richer bookmarks, anchored highlights/notes, and operating-system text-to-speech.
 7. **Advanced local-first features** — added deterministic Cover Studio palettes and focal positioning, a no-network offline companion, and an explicitly approved one-shot OpenAI writing helper.
 8. **Release quality** — added first-run help, accessibility and responsive refinements, lazy-loaded routes, security/privacy hardening, automated workflow coverage, packaging checks, and updated documentation.
+9. **Cross-device foundation** — retained the Electron desktop client, added an Expo iOS/Android client with durable SQLite storage, and added optional Supabase Auth plus end-to-end encrypted, recovery-code protected offline sync for the core library/book/chapter/reading-state model.
 
 ## Verification evidence
 
@@ -19,8 +20,10 @@ The final release audit covers:
 
 - Formatting, ESLint, Node/Web TypeScript, Vitest, and a production build through `npm run check`.
 - Six real-Electron end-to-end scenarios, including one-time first-run guidance, editor sizing, paragraph-preserving rich paste through storage and Reader, Settings wheel scrolling after section navigation, persistence across relaunch, reader progress restoration, cover focal positioning, PDF export, offline companion export, portable package round-trip, and encrypted-vault creation.
-- 30 Vitest files with 185 unit and component tests before the final release rerun.
-- `npm audit --omit=dev` with zero production dependency vulnerabilities.
+- 35 desktop/shared Vitest files with 210 passing unit and component tests, plus 31 passing mobile tests across 6 files.
+- Expo Doctor 20/20 plus successful production bundle exports for both iOS (803 modules) and Android (801 modules).
+- 27 passing Supabase pgTAP assertions, clean public-schema lint and database advisors, plus a live two-session encrypted-sync test covering concurrent creation, sign-out invalidation, sign-in rebinding, strict mutation idempotency, and device revocation.
+- `npm audit --omit=dev` currently reports a moderate `uuid` advisory inside Expo's transitive native build-tool chain. npm's proposed automatic fix downgrades Expo across a breaking boundary, so it has not been force-applied; no finding is in Storybound's encryption or runtime sync implementation.
 - `npm run package:dir`, producing `dist/mac-arm64/Storybound.app`.
 - A packaged-app smoke launch with an isolated profile, sandbox enabled, context isolation enabled, Node integration disabled, a 640×560 minimum window, and visible Getting started guidance.
 - PDF inspection with Poppler: valid A5 output, no JavaScript, no blank page after the title, and visually checked title/description pages.
@@ -32,7 +35,7 @@ Run the commands again after any later source or dependency change; generated ar
 - Local artifacts are unsigned and unnotarised.
 - The packaged smoke audit covered Apple Silicon macOS. Build and test Windows, Linux, and Intel macOS on their target systems before distribution.
 - Optional OpenAI use depends on the user's API account and external service availability. All core library, editor, reader, organisation, export, and backup workflows remain local.
-- There is no automatic cloud sync, account system, or real-time collaboration.
+- Encrypted sync is optional and single-user; it does not provide collaborative editing. A hosted Supabase project still needs to be provisioned and the public endpoint/key injected into release builds.
 
 ## Next release step
 

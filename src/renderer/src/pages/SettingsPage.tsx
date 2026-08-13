@@ -2,6 +2,7 @@ import {
   ArrowUp,
   CalendarClock,
   CheckCircle2,
+  Cloud,
   Database,
   Download,
   FolderOpen,
@@ -9,6 +10,7 @@ import {
   LockKeyhole,
   Moon,
   Play,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   Sun,
@@ -25,6 +27,9 @@ import type {
   LibrarySort,
   ReaderFont,
   ReaderTheme,
+  SyncConflictRecord,
+  SyncDeviceSummary,
+  SyncRuntimeStatus,
   TextAlignment
 } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
@@ -46,6 +51,7 @@ interface SettingsPageProps {
 const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'reader-defaults', label: 'Reader' },
+  { id: 'sync', label: 'Sync & devices' },
   { id: 'data', label: 'Data & recovery' },
   { id: 'about', label: 'About' }
 ] as const
@@ -66,21 +72,43 @@ export function SettingsPage({
   const [busy, setBusy] = useState('')
   const [reload, setReload] = useState(0)
   const [restoreConfirm, setRestoreConfirm] = useState(false)
+  const [rotateRecoveryConfirm, setRotateRecoveryConfirm] = useState(false)
   const [encryptedTransfer, setEncryptedTransfer] = useState<'export' | 'restore' | null>(null)
   const [vaultPassphrase, setVaultPassphrase] = useState('')
   const [vaultPassphraseConfirm, setVaultPassphraseConfirm] = useState('')
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance')
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncRuntimeStatus | null>(null)
+  const [syncDevices, setSyncDevices] = useState<SyncDeviceSummary[]>([])
+  const [syncConflicts, setSyncConflicts] = useState<SyncConflictRecord[]>([])
+  const [syncEmail, setSyncEmail] = useState('')
+  const [syncPassword, setSyncPassword] = useState('')
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [newRecoveryCode, setNewRecoveryCode] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
     setError('')
     try {
-      const [nextInfo, nextBackupPlans] = await Promise.all([
+      const [nextInfo, nextBackupPlans, nextSyncStatus] = await Promise.all([
         storyboundApi().app.info(),
-        storyboundApi().data.backupPlans.list()
+        storyboundApi().data.backupPlans.list(),
+        storyboundApi().sync.status()
       ])
       setInfo(unwrap(nextInfo))
       setBackupPlans(unwrap(nextBackupPlans))
+      const status = unwrap(nextSyncStatus)
+      setSyncStatus(status)
+      if (status.phase === 'idle') {
+        const [devices, conflicts] = await Promise.all([
+          storyboundApi().sync.listDevices(),
+          storyboundApi().sync.listConflicts()
+        ])
+        setSyncDevices(unwrap(devices))
+        setSyncConflicts(unwrap(conflicts))
+      } else {
+        setSyncDevices([])
+        setSyncConflicts([])
+      }
     } catch (caught) {
       setError(readableError(caught))
     }
@@ -168,6 +196,69 @@ export function SettingsPage({
 
   const refreshBackupPlans = async (): Promise<void> => {
     setBackupPlans(unwrap(await storyboundApi().data.backupPlans.list()))
+  }
+
+  const refreshSync = async (): Promise<void> => {
+    const status = unwrap(await storyboundApi().sync.status())
+    setSyncStatus(status)
+    if (status.phase === 'idle') {
+      const [devices, conflicts] = await Promise.all([
+        storyboundApi().sync.listDevices(),
+        storyboundApi().sync.listConflicts()
+      ])
+      setSyncDevices(unwrap(devices))
+      setSyncConflicts(unwrap(conflicts))
+    } else {
+      setSyncDevices([])
+      setSyncConflicts([])
+    }
+  }
+
+  const authenticateSync = async (mode: 'sign-in' | 'sign-up'): Promise<void> => {
+    setBusy(`sync-${mode}`)
+    setError('')
+    try {
+      const result =
+        mode === 'sign-in'
+          ? await storyboundApi().sync.signIn({ email: syncEmail, password: syncPassword })
+          : await storyboundApi().sync.signUp({ email: syncEmail, password: syncPassword })
+      setSyncStatus(unwrap(result))
+      setSyncPassword('')
+      await refreshSync()
+    } catch (caught) {
+      setError(readableError(caught))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const enableNewSyncVault = async (): Promise<void> => {
+    setBusy('sync-enable')
+    setError('')
+    try {
+      const result = unwrap(await storyboundApi().sync.createVault())
+      setSyncStatus(result.status)
+      setNewRecoveryCode(result.recoveryCode)
+      await refreshSync()
+    } catch (caught) {
+      setError(readableError(caught))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const unlockSyncVault = async (): Promise<void> => {
+    setBusy('sync-recover')
+    setError('')
+    try {
+      setSyncStatus(unwrap(await storyboundApi().sync.recover({ recoveryCode })))
+      setRecoveryCode('')
+      await refreshSync()
+    } catch (caught) {
+      setError(readableError(caught))
+    } finally {
+      setBusy('')
+    }
   }
 
   const chooseBackupFolder = async (): Promise<void> => {
@@ -475,6 +566,249 @@ export function SettingsPage({
             </label>
           </section>
 
+          <section className="settings-section" id="sync">
+            <div className="settings-section__heading">
+              <div className="settings-icon">
+                <Cloud size={20} />
+              </div>
+              <div>
+                <h2>Sync & devices</h2>
+                <p>
+                  Keep books available on your computers and phones. Story text is encrypted on this
+                  device before upload.
+                </p>
+              </div>
+            </div>
+            {!syncStatus?.configured ? (
+              <InlineNotice tone="info">
+                This build is local-only. Add the Storybound Supabase URL and publishable key when
+                packaging to offer optional encrypted sync; your existing library remains fully
+                usable without it.
+              </InlineNotice>
+            ) : syncStatus.phase === 'signed-out' ? (
+              <div className="scheduled-backups">
+                <div className="scheduled-backups__heading">
+                  <div>
+                    <strong>Sign in to Storybound Sync</strong>
+                    <p>Use one private account across macOS, Windows, Android, and iPhone.</p>
+                  </div>
+                  <LockKeyhole aria-hidden="true" size={21} />
+                </div>
+                <div className="scheduled-backups__create">
+                  <label>
+                    <span>Email</span>
+                    <input
+                      autoComplete="email"
+                      type="email"
+                      value={syncEmail}
+                      onChange={(event) => setSyncEmail(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Password</span>
+                    <input
+                      autoComplete="current-password"
+                      minLength={10}
+                      type="password"
+                      value={syncPassword}
+                      onChange={(event) => setSyncPassword(event.target.value)}
+                    />
+                  </label>
+                  <div className="button-pair">
+                    <Button
+                      disabled={Boolean(busy) || !syncEmail || syncPassword.length < 10}
+                      onClick={() => void authenticateSync('sign-in')}
+                    >
+                      Sign in
+                    </Button>
+                    <Button
+                      disabled={Boolean(busy) || !syncEmail || syncPassword.length < 10}
+                      variant="quiet"
+                      onClick={() => void authenticateSync('sign-up')}
+                    >
+                      Create account
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : syncStatus.phase === 'locked' ? (
+              <div className="scheduled-backups">
+                <div className="scheduled-backups__heading">
+                  <div>
+                    <strong>Unlock this device</strong>
+                    <p>
+                      Enter the recovery code from your first device, or create a new vault if this
+                      is your first device.
+                    </p>
+                  </div>
+                  <ShieldCheck aria-hidden="true" size={21} />
+                </div>
+                <div className="scheduled-backups__create">
+                  <label>
+                    <span>Recovery code</span>
+                    <input
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={recoveryCode}
+                      onChange={(event) => setRecoveryCode(event.target.value)}
+                    />
+                  </label>
+                  <Button
+                    disabled={Boolean(busy) || recoveryCode.trim().length < 39}
+                    onClick={() => void unlockSyncVault()}
+                  >
+                    Unlock and sync
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    variant="quiet"
+                    onClick={() => void enableNewSyncVault()}
+                  >
+                    Create new encrypted vault
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="scheduled-backups">
+                <div className="scheduled-backups__heading">
+                  <div>
+                    <strong>
+                      {syncStatus.phase === 'syncing' ? 'Syncing…' : 'Encrypted sync is ready'}
+                    </strong>
+                    <p>{syncStatus.accountEmail}</p>
+                  </div>
+                  <Cloud aria-hidden="true" size={21} />
+                </div>
+                <div className="scheduled-backups__create">
+                  <span>
+                    {syncStatus.pendingChanges} pending · {syncStatus.openConflicts} conflicts
+                    {syncStatus.lastSyncAt
+                      ? ` · Last synced ${new Date(syncStatus.lastSyncAt).toLocaleString()}`
+                      : ' · Not synced yet'}
+                  </span>
+                  <Button
+                    disabled={Boolean(busy)}
+                    icon={RefreshCw}
+                    onClick={() =>
+                      void runOperation('sync-now', async () => {
+                        const result = unwrap(await storyboundApi().sync.runNow())
+                        await refreshSync()
+                        return {
+                          message: `Sync complete: ${result.pushed} uploaded, ${result.pulled} downloaded.`
+                        }
+                      })
+                    }
+                  >
+                    Sync now
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    variant="quiet"
+                    onClick={() => setRotateRecoveryConfirm(true)}
+                  >
+                    New recovery code
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    variant="quiet"
+                    onClick={() =>
+                      void runOperation('sync-sign-out', async () => {
+                        setSyncStatus(unwrap(await storyboundApi().sync.signOut()))
+                        setSyncDevices([])
+                        setSyncConflicts([])
+                        return { message: 'Signed out. Local books were kept on this device.' }
+                      })
+                    }
+                  >
+                    Sign out
+                  </Button>
+                </div>
+                {syncDevices.map((device) => (
+                  <div className="scheduled-backup-plan" key={device.id}>
+                    <div>
+                      <strong>{device.displayName}</strong>
+                      <small>
+                        {device.state === 'revoked'
+                          ? 'Revoked'
+                          : device.lastSeenAt
+                            ? `Last seen ${new Date(device.lastSeenAt).toLocaleString()}`
+                            : 'Active device'}
+                      </small>
+                    </div>
+                    {device.id !== syncStatus.deviceId && device.state !== 'revoked' ? (
+                      <Button
+                        disabled={Boolean(busy)}
+                        variant="quiet"
+                        onClick={() =>
+                          void runOperation(`sync-revoke-${device.id}`, async () => {
+                            unwrap(await storyboundApi().sync.revokeDevice(device.id))
+                            await refreshSync()
+                            return { message: `Revoked ${device.displayName}.` }
+                          })
+                        }
+                      >
+                        Revoke
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                {syncConflicts.map((conflict) => (
+                  <div className="scheduled-backup-plan" key={conflict.id}>
+                    <div>
+                      <strong>Conflicting {conflict.entityType}</strong>
+                      <small>
+                        This item changed on two devices. Choose which encrypted version to keep.
+                      </small>
+                    </div>
+                    <div className="button-pair">
+                      <Button
+                        disabled={Boolean(busy)}
+                        onClick={() =>
+                          void runOperation(`sync-conflict-local-${conflict.id}`, async () => {
+                            unwrap(
+                              await storyboundApi().sync.resolveConflict({
+                                id: conflict.id,
+                                resolution: 'keep-local'
+                              })
+                            )
+                            await refreshSync()
+                            return { message: 'Kept this device’s version and resumed sync.' }
+                          })
+                        }
+                      >
+                        Keep this device
+                      </Button>
+                      <Button
+                        disabled={Boolean(busy)}
+                        variant="quiet"
+                        onClick={() =>
+                          void runOperation(`sync-conflict-remote-${conflict.id}`, async () => {
+                            unwrap(
+                              await storyboundApi().sync.resolveConflict({
+                                id: conflict.id,
+                                resolution: 'use-remote'
+                              })
+                            )
+                            await refreshSync()
+                            return { message: 'Used the other device’s version and resumed sync.' }
+                          })
+                        }
+                      >
+                        Use other device
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {newRecoveryCode ? (
+              <InlineNotice tone="success">
+                Save this recovery code somewhere private. Storybound cannot recover encrypted books
+                without it: <strong>{newRecoveryCode}</strong>
+              </InlineNotice>
+            ) : null}
+          </section>
+
           <section className="settings-section" id="data">
             <div className="settings-section__heading">
               <div className="settings-icon">
@@ -739,8 +1073,8 @@ export function SettingsPage({
                 <span>Version {info.version}</span>
               </div>
               <p>
-                No account or telemetry. Story text stays local unless you explicitly run an opt-in
-                AI action.
+                No telemetry. Story text stays local unless you explicitly enable encrypted sync or
+                run an opt-in AI action.
               </p>
             </div>
           </section>
@@ -765,6 +1099,25 @@ export function SettingsPage({
             setRestoreConfirm(false)
           }}
           title="Replace this library from a backup?"
+        />
+      ) : null}
+      {rotateRecoveryConfirm ? (
+        <ConfirmDialog
+          busy={busy === 'sync-rotate-recovery'}
+          confirmLabel="Generate new code"
+          dangerous
+          description="Your current recovery code will stop working. Only do this if you missed saving it or think it may be exposed. This device stays signed in and does not need the new code."
+          onClose={() => setRotateRecoveryConfirm(false)}
+          onConfirm={async () => {
+            await runOperation('sync-rotate-recovery', async () => {
+              const result = unwrap(await storyboundApi().sync.rotateRecoveryCode())
+              setSyncStatus(result.status)
+              setNewRecoveryCode(result.recoveryCode)
+              return { message: 'Generated a new recovery code. The old code no longer works.' }
+            })
+            setRotateRecoveryConfirm(false)
+          }}
+          title="Generate a new recovery code?"
         />
       ) : null}
       {encryptedTransfer ? (

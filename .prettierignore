@@ -8,4 +8,6 @@ node_modules
 coverage
 playwright-report
 test-results
+apps/mobile/.expo
+supabase/.temp
 package-lock.json

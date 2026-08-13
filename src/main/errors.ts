@@ -5,6 +5,7 @@ export type StoryboundErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'DATABASE_ERROR'
+  | 'NETWORK_ERROR'
   | 'FILE_ERROR'
   | 'IMPORT_ERROR'
   | 'INTEGRITY_ERROR'

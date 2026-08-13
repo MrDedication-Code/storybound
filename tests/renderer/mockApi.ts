@@ -517,6 +517,50 @@ export function makeApi(): StoryboundApi {
       get: vi.fn(async () => ok(settings)),
       update: vi.fn(async (input) => ok({ ...settings, ...input }))
     },
+    sync: {
+      status: vi.fn(async () =>
+        ok({
+          configured: false,
+          phase: 'local-only' as const,
+          accountEmail: null,
+          vaultId: null,
+          deviceId: null,
+          pendingChanges: 0,
+          openConflicts: 0,
+          lastSyncAt: null,
+          lastError: null
+        })
+      ),
+      signUp: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      signIn: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      signOut: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      createVault: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      rotateRecoveryCode: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      recover: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      runNow: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      listDevices: vi.fn(async () => ok([])),
+      revokeDevice: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      listConflicts: vi.fn(async () => ok([])),
+      resolveConflict: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      })
+    },
     recovery: {
       get: vi.fn(async () => ok(null)),
       save: vi.fn(async (input) => ok({ ...input, savedAt: timestamp })),

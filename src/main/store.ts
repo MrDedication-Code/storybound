@@ -819,6 +819,14 @@ export class StoryboundStore {
     if (this.database.open) this.database.pragma('wal_checkpoint(PASSIVE)')
   }
 
+  /** Main-process-only access for the encrypted sync coordinator sharing this transaction domain. */
+  syncDatabase(): Database.Database {
+    if (!this.database.open) {
+      throw new StoryboundError('DATABASE_ERROR', 'The Storybound library is closed.')
+    }
+    return this.database
+  }
+
   listBooks(query: LibraryQuery = {}): BookSummary[] {
     const parsed = libraryQuerySchema.parse(query) ?? {}
     const clauses: string[] = ['bl.library_id = ?']

@@ -56,3 +56,20 @@
 - Use exact accessible-name matching for a modal's textual Close button when the same dialog also has an icon button named Close dialog.
 - For paste-selection tests, derive the expected cursor as `selectionStart + insertedText.length`; Testing Library normalizes rendered `<br>` boundaries to spaces in `toHaveTextContent`, so assert break elements separately from normalized prose text.
 - Scope save-state assertions to `.save-status` when a successful manual save also creates a status-role toast; an unscoped status query correctly matches both live regions.
+- After extending a multiline import, inspect the whole import immediately and keep the comma on the preceding specifier; do not rely on the formatter to repair a comma-first insertion.
+- A base32 recovery-code decoder must reject non-canonical trailing bits by re-encoding and comparing the normalized input; a checksum alone cannot distinguish alternate final characters that decode to the same bytes.
+- With current Node typings, typed-array transformations such as `Buffer.map` can be inferred as `Uint8Array`; wrap transformed bytes explicitly with `Buffer.from(...)` when an interface requires a `Buffer`.
+- Before submitting any patch that appends to a multiline import/export list, reread the final two existing specifiers and place the separator on the existing last line; this check is mandatory because the comma-first error recurred after being documented.
+- After modifying a multiline import, immediately reread the whole import block before any other edit; automated patch insertion can still reintroduce comma-first syntax even after prior reminders.
+- When filling a scaffolded file, replace or remove its placeholder test/plan block instead of appending beneath it; otherwise an early `finish()` can hide all real tests.
+- After adding or removing pgTAP assertions, count the assertion statements again before changing `plan(...)`; a passing body still fails on a stale plan count.
+- Do not hard-code PostgreSQL sequence values in rollback-based tests: sequence increments are non-transactional, so assert cursor relationships rather than an absolute first value.
+- For pgTAP `throws_ok` strings containing nested JSON builders, validate the inner SQL independently or count every function parenthesis before running the suite.
+- In files with repeated SQL return blocks, patch against a unique surrounding query/function context and immediately inspect every new occurrence; a generic `return jsonb_build_object` anchor can target the wrong RPC.
+- Keep generated Expo `.expo` export metadata out of repository-wide formatting checks; native export verification rewrites it with tool-owned formatting that should not become source churn.
+- Quote executable paths containing spaces even when building a shell command from a trusted constant; interpolating an absolute workspace tool path without quotes truncates it at the first space.
+- Electron Vite's dependency externalizer treats npm workspace packages like published runtime packages; exclude source-only TypeScript workspaces from externalization or the packaged main process will ask Node to load their extensionless `.ts` exports and fail before opening a window.
+- When adding a mobile workspace beside Electron, update Electron Builder's file allow/exclude scope and inspect the actual ASAR; otherwise mobile source, native export caches, Supabase files, and shared TypeScript sources are silently shipped inside the desktop application.
+- Ignore Supabase CLI's generated `supabase/.temp` catalogs in both Git and repository-wide format checks; migration diff/audit commands can create them even when the main local stack lives in a separate temporary directory.
+- In a concurrent compare-and-swap E2E, derive the idempotency retry from whichever writer was actually accepted; assuming a fixed winner turns a valid conflict response into a nondeterministic false failure.
+- Privilege-revoked tables hide their columns from `information_schema.columns` for the authenticated test role; use `pg_catalog.pg_attribute` when the assertion is specifically about schema existence rather than caller-visible metadata.

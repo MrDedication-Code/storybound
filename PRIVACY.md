@@ -1,6 +1,6 @@
 # Storybound Privacy
 
-Storybound is a private, local-first personal library. It does not require an account and includes no analytics, advertising, behavioural tracking, automatic cloud sync, or hidden story upload. All core features work offline.
+Storybound is a private, local-first personal library. It does not require an account and includes no analytics, advertising, behavioural tracking, or hidden story upload. All core features work offline. Optional encrypted sync requires an account only when the user chooses to enable it.
 
 ## Data stored on this computer
 
@@ -18,6 +18,14 @@ Storybound stores information needed for the features the user chooses, includin
 Structured information is held in SQLite. Managed cover files and local safety backups sit beside it in Storybound's application-data directory. **Settings → Data → Open data folder** reveals the active location.
 
 Storybound does not store the passphrase used for an encrypted vault. It also does not store an OpenAI API key in SQLite, settings, logs, backups, or exports.
+
+## Optional encrypted device sync
+
+An unconfigured build makes no sync requests. After the user signs in and explicitly creates or unlocks a sync vault, Storybound sends encrypted entity payloads to the configured Supabase project. Story titles, chapter prose, notes, and reading data are encrypted with AES-256-GCM on the device before transport.
+
+Supabase necessarily processes the account email, authentication/session data, vault and device identifiers, entity type and opaque entity ID, revision/timing information, payload sizes, and ciphertext. It does not receive the vault key or recovery code and cannot decrypt payload contents. Session tokens, the local vault key, and a random per-device possession token are stored using the operating system's protected credential facility on desktop and SecureStore on mobile; Supabase stores only the possession token's SHA-256 hash.
+
+The recovery code is shown when the first vault is created. Losing every unlocked device and that code makes the synced ciphertext unrecoverable. Revoking a device stops later RPC access but cannot erase data that device already downloaded. Signing out or disabling sync does not delete local books.
 
 ## Optional OpenAI writing assistant
 

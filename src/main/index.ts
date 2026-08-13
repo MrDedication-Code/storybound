@@ -20,6 +20,7 @@ import { registerStoryboundIpc } from './ipc'
 import { AppLogger } from './logger'
 import { registerMediaProtocol } from './media-protocol'
 import { StoryboundStore } from './store'
+import { StoryboundSyncController } from './cloud/syncController'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -40,6 +41,18 @@ let unregisterIpc: (() => void) | null = null
 let isQuitting = false
 let backupTimer: ReturnType<typeof setInterval> | null = null
 let backupRunning = false
+let syncController: StoryboundSyncController | null = null
+let syncTimer: ReturnType<typeof setInterval> | null = null
+
+async function runBackgroundSync(): Promise<void> {
+  if (!syncController || isQuitting) return
+  try {
+    const status = await syncController.status()
+    if (status.phase === 'idle') await syncController.syncNow()
+  } catch (error) {
+    logger?.error('background-sync', error)
+  }
+}
 
 async function runScheduledBackups(): Promise<void> {
   if (!store || backupRunning || isQuitting) return
@@ -344,11 +357,19 @@ async function start(): Promise<void> {
 
   configureSessionSecurity()
   registerMediaProtocol(store.paths.media, logger)
-  unregisterIpc = registerStoryboundIpc({ store, logger, getWindow: () => mainWindow })
+  syncController = await StoryboundSyncController.create(store)
+  unregisterIpc = registerStoryboundIpc({
+    store,
+    sync: syncController,
+    logger,
+    getWindow: () => mainWindow
+  })
   installApplicationMenu()
   mainWindow = createWindow()
   setTimeout(() => void runScheduledBackups(), 10_000)
+  setTimeout(() => void runBackgroundSync(), 12_000)
   backupTimer = setInterval(() => void runScheduledBackups(), 15 * 60_000)
+  syncTimer = setInterval(() => void runBackgroundSync(), 5 * 60_000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
@@ -376,6 +397,8 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   if (backupTimer) clearInterval(backupTimer)
   backupTimer = null
+  if (syncTimer) clearInterval(syncTimer)
+  syncTimer = null
   unregisterIpc?.()
   unregisterIpc = null
   store?.close()

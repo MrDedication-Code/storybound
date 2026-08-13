@@ -1,0 +1,18 @@
+{
+  "name": "@storybound/sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./canonical": "./src/canonical.ts",
+    "./crypto": "./src/crypto.ts"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@noble/ciphers": "2.2.0",
+    "@noble/curves": "2.3.0",
+    "@noble/hashes": "2.3.0",
+    "@storybound/contracts": "0.1.0"
+  }
+}

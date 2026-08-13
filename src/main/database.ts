@@ -619,6 +619,217 @@ export const migrations: readonly Migration[] = [
       ALTER TABLE application_settings ADD COLUMN has_seen_getting_started INTEGER NOT NULL DEFAULT 0
         CHECK(has_seen_getting_started IN (0, 1));
     `
+  },
+  {
+    version: 10,
+    name: 'durable-offline-sync',
+    sql: `
+      ALTER TABLE reading_states RENAME TO reading_states_v9;
+      CREATE TABLE reading_states (
+        book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+        chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+        scroll_position REAL NOT NULL DEFAULT 0 CHECK(scroll_position BETWEEN 0 AND 1),
+        progress_percentage REAL NOT NULL DEFAULT 0
+          CHECK(progress_percentage BETWEEN 0 AND 100),
+        last_read_at TEXT,
+        has_finished_current_content INTEGER NOT NULL DEFAULT 0
+          CHECK(has_finished_current_content IN (0, 1)),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        row_version INTEGER NOT NULL DEFAULT 1 CHECK(row_version >= 1),
+        device_id TEXT REFERENCES devices(id) ON DELETE SET NULL
+      );
+      INSERT INTO reading_states (
+        book_id, chapter_id, scroll_position, progress_percentage, last_read_at,
+        has_finished_current_content, updated_at, row_version
+      )
+      SELECT
+        book_id, chapter_id, scroll_position, progress_percentage, last_read_at,
+        has_finished_current_content,
+        COALESCE(last_read_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        1
+      FROM reading_states_v9;
+      DROP TABLE reading_states_v9;
+
+      CREATE TRIGGER reading_states_sync_update
+      AFTER UPDATE OF chapter_id, scroll_position, progress_percentage, last_read_at,
+        has_finished_current_content ON reading_states
+      WHEN new.updated_at = old.updated_at AND new.row_version = old.row_version
+      BEGIN
+        UPDATE reading_states
+        SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            row_version = old.row_version + 1
+        WHERE book_id = old.book_id;
+      END;
+
+      ALTER TABLE sync_outbox RENAME TO sync_outbox_v6;
+      CREATE TABLE sync_outbox (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        mutation_id TEXT NOT NULL UNIQUE,
+        library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+        entity_type TEXT NOT NULL CHECK(length(trim(entity_type)) > 0),
+        entity_id TEXT NOT NULL CHECK(length(trim(entity_id)) > 0),
+        operation TEXT NOT NULL CHECK(operation IN ('upsert', 'delete')),
+        base_remote_revision TEXT,
+        change_set_id TEXT,
+        row_version INTEGER NOT NULL CHECK(row_version >= 1),
+        payload_ciphertext BLOB NOT NULL,
+        payload_nonce BLOB NOT NULL,
+        payload_encoding TEXT NOT NULL CHECK(length(trim(payload_encoding)) > 0),
+        payload_key_version INTEGER NOT NULL DEFAULT 1 CHECK(payload_key_version >= 1),
+        payload_schema_version INTEGER NOT NULL DEFAULT 1 CHECK(payload_schema_version >= 1),
+        payload_hash TEXT NOT NULL CHECK(length(trim(payload_hash)) > 0),
+        device_id TEXT REFERENCES devices(id) ON DELETE SET NULL,
+        state TEXT NOT NULL DEFAULT 'queued' CHECK(state IN ('queued', 'sending')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+        next_attempt_at TEXT,
+        sending_started_at TEXT,
+        last_error TEXT,
+        changed_at TEXT NOT NULL,
+        enqueued_at TEXT NOT NULL
+      );
+      INSERT INTO sync_outbox (
+        sequence, mutation_id, library_id, entity_type, entity_id, operation,
+        row_version, payload_ciphertext, payload_nonce, payload_encoding,
+        payload_hash, device_id, changed_at, enqueued_at
+      )
+      SELECT
+        sequence,
+        lower(
+          hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||
+          substr(hex(randomblob(2)), 2) || '-' ||
+          substr(
+            '89ab',
+            (instr('0123456789ABCDEF', substr(hex(randomblob(1)), 1, 1)) - 1) % 4 + 1,
+            1
+          ) ||
+          substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))
+        ),
+        library_id, entity_type, entity_id, operation, row_version,
+        X'', X'', 'legacy-hash-v0', payload_hash, device_id, changed_at, changed_at
+      FROM sync_outbox_v6;
+      DROP TABLE sync_outbox_v6;
+
+      CREATE INDEX sync_outbox_ready_idx
+      ON sync_outbox(library_id, state, next_attempt_at, sequence);
+      CREATE INDEX sync_outbox_entity_idx
+      ON sync_outbox(library_id, entity_type, entity_id, state, sequence);
+      CREATE INDEX sync_outbox_change_set_idx
+      ON sync_outbox(library_id, change_set_id, sequence)
+      WHERE change_set_id IS NOT NULL;
+
+      ALTER TABLE sync_entity_state RENAME TO sync_entity_state_v6;
+      CREATE TABLE sync_entity_state (
+        library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        base_remote_revision TEXT,
+        remote_revision TEXT,
+        remote_etag TEXT,
+        base_payload_hash TEXT,
+        base_payload BLOB,
+        base_payload_nonce BLOB,
+        base_payload_encoding TEXT,
+        base_payload_key_version INTEGER
+          CHECK(base_payload_key_version IS NULL OR base_payload_key_version >= 1),
+        base_payload_schema_version INTEGER
+          CHECK(base_payload_schema_version IS NULL OR base_payload_schema_version >= 1),
+        local_row_version INTEGER CHECK(local_row_version IS NULL OR local_row_version >= 1),
+        dirty INTEGER NOT NULL DEFAULT 0 CHECK(dirty IN (0, 1)),
+        conflict_state TEXT NOT NULL DEFAULT 'none'
+          CHECK(conflict_state IN ('none', 'open')),
+        last_pulled_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(library_id, entity_type, entity_id)
+      );
+      INSERT INTO sync_entity_state (
+        library_id, entity_type, entity_id, base_remote_revision, remote_revision,
+        remote_etag, dirty, conflict_state, updated_at
+      )
+      SELECT
+        library_id, entity_type, entity_id, remote_revision, remote_revision,
+        remote_etag, dirty,
+        CASE WHEN conflict_state = 'none' THEN 'none' ELSE 'open' END,
+        updated_at
+      FROM sync_entity_state_v6;
+      DROP TABLE sync_entity_state_v6;
+      CREATE INDEX sync_entity_state_dirty_idx
+      ON sync_entity_state(library_id, dirty, conflict_state, updated_at);
+
+      ALTER TABLE sync_conflicts RENAME TO sync_conflicts_v6;
+      CREATE TABLE sync_conflicts (
+        id TEXT PRIMARY KEY,
+        library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        conflict_kind TEXT NOT NULL DEFAULT 'unknown'
+          CHECK(conflict_kind IN (
+            'concurrent_edit', 'remote_delete', 'local_delete', 'ordering', 'unknown'
+          )),
+        base_remote_revision TEXT,
+        local_row_version INTEGER CHECK(local_row_version IS NULL OR local_row_version >= 1),
+        remote_revision TEXT,
+        base_payload BLOB NOT NULL,
+        local_payload BLOB NOT NULL,
+        remote_payload BLOB NOT NULL,
+        payload_encoding TEXT NOT NULL DEFAULT 'canonical-json-v1',
+        status TEXT NOT NULL CHECK(status IN ('open', 'resolved', 'ignored')),
+        resolution TEXT CHECK(resolution IS NULL OR resolution IN (
+          'keep_local', 'use_remote', 'keep_both', 'merged'
+        )),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        resolved_at TEXT
+      );
+      INSERT INTO sync_conflicts (
+        id, library_id, entity_type, entity_id, base_payload, local_payload,
+        remote_payload, status, created_at, updated_at, resolved_at
+      )
+      SELECT
+        id, library_id, entity_type, entity_id, CAST(base_json AS BLOB),
+        CAST(local_json AS BLOB), CAST(remote_json AS BLOB), status, created_at,
+        COALESCE(resolved_at, created_at), resolved_at
+      FROM sync_conflicts_v6;
+      DROP TABLE sync_conflicts_v6;
+      CREATE INDEX sync_conflicts_open_idx
+      ON sync_conflicts(library_id, status, entity_type, entity_id, created_at);
+
+      ALTER TABLE sync_tombstones RENAME TO sync_tombstones_v6;
+      CREATE TABLE sync_tombstones (
+        id TEXT PRIMARY KEY,
+        library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        mutation_id TEXT,
+        row_version INTEGER NOT NULL DEFAULT 1 CHECK(row_version >= 1),
+        remote_revision TEXT,
+        payload_hash TEXT,
+        deleted_at TEXT NOT NULL,
+        device_id TEXT REFERENCES devices(id) ON DELETE SET NULL,
+        acknowledged_at TEXT,
+        retained_until TEXT,
+        UNIQUE(library_id, entity_type, entity_id)
+      );
+      INSERT INTO sync_tombstones (
+        id, library_id, entity_type, entity_id, deleted_at, device_id, acknowledged_at
+      )
+      SELECT id, library_id, entity_type, entity_id, deleted_at, device_id, acknowledged_at
+      FROM sync_tombstones_v6 AS candidate
+      WHERE candidate.rowid = (
+        SELECT latest.rowid
+        FROM sync_tombstones_v6 AS latest
+        WHERE latest.library_id = candidate.library_id
+          AND latest.entity_type = candidate.entity_type
+          AND latest.entity_id = candidate.entity_id
+        ORDER BY latest.deleted_at DESC, latest.rowid DESC
+        LIMIT 1
+      );
+      DROP TABLE sync_tombstones_v6;
+      CREATE INDEX sync_tombstones_pending_idx
+      ON sync_tombstones(library_id, acknowledged_at, deleted_at);
+
+      CREATE INDEX sync_profiles_enabled_idx
+      ON sync_profiles(enabled, updated_at);
+    `
   }
 ]
 

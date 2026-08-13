@@ -1,3 +1,14 @@
+import type {
+  SyncConflictRecord,
+  SyncCredentialsInput,
+  SyncDeviceSummary,
+  SyncEnableResult,
+  SyncRecoveryInput,
+  SyncResolveConflictInput,
+  SyncRunResult,
+  SyncRuntimeStatus
+} from '@storybound/contracts'
+
 export const APP_NAME = 'Storybound'
 export const DATA_FORMAT_VERSION = 2
 
@@ -826,6 +837,20 @@ export interface StoryboundApi {
     get(): Promise<ApiResult<ApplicationSettings>>
     update(input: Partial<ApplicationSettings>): Promise<ApiResult<ApplicationSettings>>
   }
+  sync: {
+    status(): Promise<ApiResult<SyncRuntimeStatus>>
+    signUp(input: SyncCredentialsInput): Promise<ApiResult<SyncRuntimeStatus>>
+    signIn(input: SyncCredentialsInput): Promise<ApiResult<SyncRuntimeStatus>>
+    signOut(): Promise<ApiResult<SyncRuntimeStatus>>
+    createVault(deviceName?: string): Promise<ApiResult<SyncEnableResult>>
+    rotateRecoveryCode(): Promise<ApiResult<SyncEnableResult>>
+    recover(input: SyncRecoveryInput): Promise<ApiResult<SyncRuntimeStatus>>
+    runNow(): Promise<ApiResult<SyncRunResult>>
+    listDevices(): Promise<ApiResult<SyncDeviceSummary[]>>
+    revokeDevice(deviceId: string): Promise<ApiResult<SyncRuntimeStatus>>
+    listConflicts(): Promise<ApiResult<SyncConflictRecord[]>>
+    resolveConflict(input: SyncResolveConflictInput): Promise<ApiResult<SyncRunResult>>
+  }
   recovery: {
     get(chapterId: string): Promise<ApiResult<RecoveryDraft | null>>
     save(input: SaveRecoveryDraftInput): Promise<ApiResult<RecoveryDraft>>
@@ -851,3 +876,27 @@ export interface StoryboundApi {
     }
   }
 }
+
+export {
+  SYNC_ENCRYPTION_ALGORITHM,
+  SYNC_PROTOCOL_VERSION,
+  type SyncCiphertext,
+  type SyncConflictRecord,
+  type SyncConflictResolution,
+  type SyncConnectionPhase,
+  type SyncCredentialsInput,
+  type SyncDeviceSummary,
+  type SyncEnableResult,
+  type SyncEntityType,
+  type SyncKeyEnvelope,
+  type SyncMutationEnvelope,
+  type SyncOperation,
+  type SyncPullResult,
+  type SyncPushBatchRequest,
+  type SyncPushBatchResult,
+  type SyncRemoteBatch,
+  type SyncRecoveryInput,
+  type SyncResolveConflictInput,
+  type SyncRunResult,
+  type SyncRuntimeStatus
+} from '@storybound/contracts'

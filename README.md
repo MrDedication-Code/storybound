@@ -118,7 +118,7 @@ Do not edit or live-sync SQLite files while Storybound is running. Use scheduled
 
 ## Privacy and safety
 
-Storybound has no analytics, advertising, account requirement, hidden upload, or automatic cloud sync. Network access occurs only when the user opens the optional AI assistant, provides an API key, confirms the disclosure, and presses **Send one request**. Read [PRIVACY.md](PRIVACY.md) for the exact boundary.
+Storybound has no analytics, advertising, mandatory account, or hidden upload. Optional encrypted sync contacts the configured Supabase project only after the user signs in and enables a vault; prose and titles are encrypted before upload. The optional AI assistant remains a separate, explicitly initiated one-shot request. Read [PRIVACY.md](PRIVACY.md) for the exact boundaries.
 
 For valuable writing:
 
@@ -129,7 +129,7 @@ For valuable writing:
 
 ## Known limitations
 
-- There is no account system, real-time collaboration, or automatic cloud sync. Encrypted vaults are user-managed snapshot files, not live synchronisation.
+- Encrypted sync is single-user and offline-first; it is not real-time collaboration. A hosted Supabase project and build-time public configuration are required before release.
 - Story content uses a safe Markdown subset rather than full word-processing layout.
 - Search is lexical rather than semantic.
 - Reading positions, bookmarks, and annotation anchors are designed to recover approximately after major text or structural edits; review them after large rewrites or assisted multi-splits.
@@ -138,7 +138,8 @@ For valuable writing:
 - PDF output is visually verified but is not a tagged accessibility PDF. EPUB support varies by reader.
 - Portable exports and encrypted vault payloads are limited to 500 MB.
 - The live SQLite database and ordinary package/backup files are not encrypted. Use full-disk encryption or the encrypted vault export where appropriate.
-- There is no native mobile app; the offline companion is a self-contained HTML reading copy.
+- The Expo iOS/Android client covers the core library, reader, editor, reading position, and encrypted-sync flow; organisation and writing-statistics screens remain desktop-first.
+- The first encrypted-sync release covers libraries, book metadata, chapters, and reading position. Custom cover image files, tags, collections, annotations, Story Bible records, revisions, and writing statistics remain local/export-backed until their mobile models are added.
 - Generated cover options are local colour treatments, not AI-generated illustrations.
 - Installers remain unsigned and unnotarised until release credentials are configured.
 
@@ -151,6 +152,7 @@ For valuable writing:
 - [DECISIONS.md](DECISIONS.md) — architecture and product decisions
 - [PROGRESS.md](PROGRESS.md) — implementation status and verification
 - [FUTURE_IDEAS.md](FUTURE_IDEAS.md) — genuinely deferred ideas
+- [SYNC_SETUP.md](SYNC_SETUP.md) — local Supabase, hosted deployment, mobile, and recovery-code setup
 
 ## Licence
 

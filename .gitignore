@@ -8,3 +8,7 @@ coverage
 playwright-report
 test-results
 .storybound-test-data
+.env
+.env.local
+apps/mobile/.expo
+supabase/.temp

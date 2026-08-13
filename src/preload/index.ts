@@ -127,6 +127,20 @@ const api: StoryboundApi = {
     get: () => invoke(IPC_CHANNELS.settingsGet),
     update: (input) => invoke(IPC_CHANNELS.settingsUpdate, input)
   },
+  sync: {
+    status: () => invoke(IPC_CHANNELS.syncStatus),
+    signUp: (input) => invoke(IPC_CHANNELS.syncSignUp, input),
+    signIn: (input) => invoke(IPC_CHANNELS.syncSignIn, input),
+    signOut: () => invoke(IPC_CHANNELS.syncSignOut),
+    createVault: (deviceName) => invoke(IPC_CHANNELS.syncCreateVault, deviceName),
+    rotateRecoveryCode: () => invoke(IPC_CHANNELS.syncRotateRecoveryCode),
+    recover: (input) => invoke(IPC_CHANNELS.syncRecover, input),
+    runNow: () => invoke(IPC_CHANNELS.syncRunNow),
+    listDevices: () => invoke(IPC_CHANNELS.syncListDevices),
+    revokeDevice: (deviceId) => invoke(IPC_CHANNELS.syncRevokeDevice, deviceId),
+    listConflicts: () => invoke(IPC_CHANNELS.syncListConflicts),
+    resolveConflict: (input) => invoke(IPC_CHANNELS.syncResolveConflict, input)
+  },
   recovery: {
     get: (chapterId) => invoke(IPC_CHANNELS.recoveryGet, chapterId),
     save: (input) => invoke(IPC_CHANNELS.recoverySave, input),

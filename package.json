@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "A calm, local-first library for AI-generated stories",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -19,6 +23,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
+    "mobile:start": "npm run start --workspace @storybound/mobile",
+    "mobile:android": "npm run android --workspace @storybound/mobile",
+    "mobile:ios": "npm run ios --workspace @storybound/mobile",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "supabase:reset": "supabase db reset --local",
+    "supabase:test": "supabase test db",
+    "supabase:test:e2e": "node scripts/verify-sync-concurrency.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
@@ -31,6 +44,12 @@
     "package:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
+    "@noble/ciphers": "2.2.0",
+    "@noble/curves": "2.3.0",
+    "@noble/hashes": "2.3.0",
+    "@storybound/contracts": "0.1.0",
+    "@storybound/sync": "0.1.0",
+    "@supabase/supabase-js": "2.112.2",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "adm-zip": "^0.6.0",
@@ -64,9 +83,10 @@
     "jsdom": "^30.0.1",
     "png-to-ico": "^3.0.2",
     "prettier": "^3.9.6",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "sharp": "^0.35.3",
+    "supabase": "2.111.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"

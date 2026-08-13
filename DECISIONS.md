@@ -12,6 +12,8 @@
 - **Small hash router with lazy page chunks:** packaged `file://` navigation stays predictable while infrequently used screens do not inflate the initial renderer bundle.
 - **Atomic and transactional storage:** multi-record edits use transactions; file exports use temporary files and atomic replacement.
 - **Acknowledged application close:** Electron waits for the renderer to flush the newest editor revision and reading position, with an explicit user choice only if saving remains stuck.
+- **Separate native mobile client:** Expo/React Native provides iOS and Android UI while sharing versioned contracts and cryptography with Electron. Each client owns a local SQLite database and remains usable offline.
+- **Optional encrypted Supabase transport:** Supabase Auth, Postgres RPCs, and RLS provide account/device ownership and a durable revision log. AES-256-GCM payloads are encrypted before transport; recovery and vault keys stay in OS-protected device storage.
 
 ## Data portability
 
@@ -45,7 +47,7 @@
 
 ## Security and privacy
 
-- No analytics, advertising, account requirement, hidden backup, remote font, or automatic cloud sync.
+- No analytics, advertising, mandatory account, hidden backup, or remote font. Encrypted sync is opt-in and can be omitted entirely from an unconfigured build.
 - Navigation outside the app is denied by default; application-owned external links require an explicit safe path.
 - User-facing failures avoid cryptographic and storage internals; technical diagnostics stay local.
 - The live SQLite database and ordinary portable archives remain plaintext. Operating-system disk encryption or the encrypted vault export is required for at-rest confidentiality outside the app.

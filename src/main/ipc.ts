@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
+import { syncCredentialsSchema, syncRecoveryCodeSchema } from '@storybound/contracts'
 import type { ApiResult, OperationResult } from '../shared/types'
 import {
   createAnnotationSchema,
@@ -66,9 +67,11 @@ import type { AppLogger } from './logger'
 import { buildBookEpub3, buildBookMarkdown, buildBookPrintHtml } from './standardExport'
 import { buildOfflineCompanionHtml } from './companionExport'
 import type { StoryboundStore } from './store'
+import type { StoryboundSyncController } from './cloud/syncController'
 
 interface IpcDependencies {
   store: StoryboundStore
+  sync: StoryboundSyncController
   logger: AppLogger
   getWindow: () => BrowserWindow | null
 }
@@ -95,7 +98,12 @@ function writeAtomically(targetPath: string, data: string | Buffer): void {
   }
 }
 
-export function registerStoryboundIpc({ store, logger, getWindow }: IpcDependencies): () => void {
+export function registerStoryboundIpc({
+  store,
+  sync,
+  logger,
+  getWindow
+}: IpcDependencies): () => void {
   const registered: Channel[] = []
 
   const handle = <Input, Output>(
@@ -289,6 +297,29 @@ export function registerStoryboundIpc({ store, logger, getWindow }: IpcDependenc
   handle(IPC_CHANNELS.searchLocate, locateSearchHitSchema, (input) => store.locateSearchHit(input))
   handle(IPC_CHANNELS.settingsGet, noInput, () => store.getSettings())
   handle(IPC_CHANNELS.settingsUpdate, settingsUpdateSchema, (input) => store.updateSettings(input))
+  const optionalDeviceName = z.string().trim().min(1).max(120).optional()
+  handle(IPC_CHANNELS.syncStatus, noInput, () => sync.status())
+  handle(IPC_CHANNELS.syncSignUp, syncCredentialsSchema, (input) => sync.signUp(input))
+  handle(IPC_CHANNELS.syncSignIn, syncCredentialsSchema, (input) => sync.signIn(input))
+  handle(IPC_CHANNELS.syncSignOut, noInput, () => sync.signOut())
+  handle(IPC_CHANNELS.syncCreateVault, optionalDeviceName, (deviceName) =>
+    sync.createVault(deviceName)
+  )
+  handle(IPC_CHANNELS.syncRotateRecoveryCode, noInput, () => sync.rotateRecoveryCode())
+  handle(
+    IPC_CHANNELS.syncRecover,
+    z.object({ recoveryCode: syncRecoveryCodeSchema, deviceName: optionalDeviceName }),
+    (input) => sync.recoverVault(input.recoveryCode, input.deviceName)
+  )
+  handle(IPC_CHANNELS.syncRunNow, noInput, () => sync.syncNow())
+  handle(IPC_CHANNELS.syncListDevices, noInput, () => sync.listDevices())
+  handle(IPC_CHANNELS.syncRevokeDevice, idSchema, (deviceId) => sync.revokeDevice(deviceId))
+  handle(IPC_CHANNELS.syncListConflicts, noInput, () => sync.listConflicts())
+  handle(
+    IPC_CHANNELS.syncResolveConflict,
+    z.object({ id: idSchema, resolution: z.enum(['keep-local', 'use-remote']) }),
+    (input) => sync.resolveConflict(input.id, input.resolution)
+  )
   handle(IPC_CHANNELS.recoveryGet, idSchema, (id) => store.getRecoveryDraft(id))
   handle(IPC_CHANNELS.recoverySave, saveRecoveryDraftSchema, (input) =>
     store.saveRecoveryDraft(input)

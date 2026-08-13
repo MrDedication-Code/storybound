@@ -3,6 +3,12 @@ productName: Storybound
 directories:
   buildResources: build
 files:
+  - '!apps/**'
+  - '!packages/**'
+  - '!scripts/**'
+  - '!supabase/**'
+  - '!tests/**'
+  - '!node_modules/@storybound/**'
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
