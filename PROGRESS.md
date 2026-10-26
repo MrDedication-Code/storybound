@@ -1,6 +1,6 @@
 # Storybound Progress
 
-Last updated: 6 August 2026
+Last updated: 26 October 2026
 
 ## Completed roadmap
 
@@ -13,6 +13,7 @@ Last updated: 6 August 2026
 7. **Advanced local-first features** — added deterministic Cover Studio palettes and focal positioning, a no-network offline companion, and an explicitly approved one-shot OpenAI writing helper.
 8. **Release quality** — added first-run help, accessibility and responsive refinements, lazy-loaded routes, security/privacy hardening, automated workflow coverage, packaging checks, and updated documentation.
 9. **Cross-device foundation** — retained the Electron desktop client, added an Expo iOS/Android client with durable SQLite storage, and added optional Supabase Auth plus end-to-end encrypted, recovery-code protected offline sync for the core library/book/chapter/reading-state model.
+10. **AI assistant connections** — added an optional, local-only MCP server so Claude Desktop and Claude Code can list, read, create, append, and revise books and chapters, a dependency-free stdio bridge run by Storybound's own executable, a watched inbox folder for other AI tools, live library refresh with unsaved-edit protection, a single-instance lock, and in-app setup and how-it-works guidance under **Settings → AI assistants**.
 
 ## Verification evidence
 

@@ -15,6 +15,7 @@ Storybound is a calm, local-first desktop library for collecting, organising, wr
 - Use generated local cover palettes or a custom image with adjustable focal positioning.
 - Export Markdown, EPUB 3, print-ready PDF, a self-contained offline companion reader, or a portable Storybound package.
 - Protect the full library with verified manual or scheduled backups and optional passphrase-encrypted transfer vaults.
+- Let Claude save the story it is writing with you straight into your library through a built-in, local-only MCP connection, or let any other AI tool drop chapter files into a watched inbox folder (**Settings → AI assistants**, both off by default).
 
 See [INSTALLATION.md](INSTALLATION.md) for installation guidance and [BACKUP_AND_RESTORE.md](BACKUP_AND_RESTORE.md) before moving or restoring a library.
 
@@ -89,7 +90,8 @@ Local artifacts are unsigned and unnotarised. Public distribution should add pla
 5. Managed cover images are copied into Storybound's data directory; the database never depends permanently on the original file path.
 6. Versioned book packages and full backups are staged and validated before import or replacement. Full restore keeps a safety copy of the previous live library.
 7. Optional OpenAI assistance is one-shot, explicitly consented, uses `store: false`, and keeps the API key only in renderer memory for the open dialog.
-8. Story Markdown renders without raw HTML. Story links remain inert, and the offline companion has a restrictive content-security policy with no network access.
+8. The optional Claude connection is an MCP server bound to `127.0.0.1`, guarded by an access token and Origin/Host checks, exposing non-destructive book and chapter tools that run through the same validated store methods as the UI. `resources/mcp-bridge.cjs` relays Claude's stdio connection to it using Storybound's own executable in Node mode. A single-instance lock guarantees one process per data folder.
+9. Story Markdown renders without raw HTML. Story links remain inert, and the offline companion has a restrictive content-security policy with no network access.
 
 Multi-step storage changes use transactions. Books and chapters use recoverable Trash flows before permanent deletion.
 
@@ -118,7 +120,7 @@ Do not edit or live-sync SQLite files while Storybound is running. Use scheduled
 
 ## Privacy and safety
 
-Storybound has no analytics, advertising, mandatory account, or hidden upload. Optional encrypted sync contacts the configured Supabase project only after the user signs in and enables a vault; prose and titles are encrypted before upload. The optional AI assistant remains a separate, explicitly initiated one-shot request. Read [PRIVACY.md](PRIVACY.md) for the exact boundaries.
+Storybound has no analytics, advertising, mandatory account, or hidden upload. Optional encrypted sync contacts the configured Supabase project only after the user signs in and enables a vault; prose and titles are encrypted before upload. The optional AI assistant remains a separate, explicitly initiated one-shot request. The optional Claude connection and inbox folder are local-only and make no network requests from Storybound. Read [PRIVACY.md](PRIVACY.md) for the exact boundaries.
 
 For valuable writing:
 

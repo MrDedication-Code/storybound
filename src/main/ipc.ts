@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent
+} from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -68,10 +76,12 @@ import { buildBookEpub3, buildBookMarkdown, buildBookPrintHtml } from './standar
 import { buildOfflineCompanionHtml } from './companionExport'
 import type { StoryboundStore } from './store'
 import type { StoryboundSyncController } from './cloud/syncController'
+import { INBOX_INSTRUCTIONS, type AgentBridgeController } from './agentBridge'
 
 interface IpcDependencies {
   store: StoryboundStore
   sync: StoryboundSyncController
+  agentBridge: AgentBridgeController
   logger: AppLogger
   getWindow: () => BrowserWindow | null
 }
@@ -101,6 +111,7 @@ function writeAtomically(targetPath: string, data: string | Buffer): void {
 export function registerStoryboundIpc({
   store,
   sync,
+  agentBridge,
   logger,
   getWindow
 }: IpcDependencies): () => void {
@@ -298,6 +309,59 @@ export function registerStoryboundIpc({
   handle(IPC_CHANNELS.settingsGet, noInput, () => store.getSettings())
   handle(IPC_CHANNELS.settingsUpdate, settingsUpdateSchema, (input) => store.updateSettings(input))
   const optionalDeviceName = z.string().trim().min(1).max(120).optional()
+  handle(IPC_CHANNELS.agentBridgeStatus, noInput, () => agentBridge.status())
+  handle(
+    IPC_CHANNELS.agentBridgeUpdate,
+    z.object({ mcpEnabled: z.boolean().optional(), inboxEnabled: z.boolean().optional() }),
+    (input) => agentBridge.update(input)
+  )
+  handle(IPC_CHANNELS.agentBridgeRegenerateToken, noInput, () => agentBridge.regenerateToken())
+  handle(IPC_CHANNELS.agentBridgeChooseInbox, noInput, async () => {
+    const result = await dialog.showOpenDialog(getWindow()!, {
+      title: 'Choose inbox folder',
+      message: 'Storybound imports story files that other AI tools save into this folder.',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || !result.filePaths[0]) return agentBridge.status()
+    return agentBridge.setInboxPath(result.filePaths[0])
+  })
+  handle(IPC_CHANNELS.agentBridgeOpenInbox, noInput, async () => {
+    const inboxPath = agentBridge.inboxPath
+    if (!inboxPath) throw new StoryboundError('VALIDATION_ERROR', 'Choose an inbox folder first.')
+    const failure = await shell.openPath(inboxPath)
+    if (failure) throw new StoryboundError('FILE_ERROR', failure)
+    return { message: 'Opened the inbox folder.' }
+  })
+  handle(IPC_CHANNELS.agentBridgeScanInbox, noInput, () => agentBridge.scanInboxNow())
+  handle(
+    IPC_CHANNELS.agentBridgeCopy,
+    z.enum(['claude-code-command', 'claude-desktop-config', 'http-token', 'inbox-instructions']),
+    (kind) => {
+      const status = agentBridge.status()
+      const text = {
+        'claude-code-command': status.claudeCodeCommand,
+        'claude-desktop-config': status.claudeDesktopConfig,
+        'http-token': agentBridge.accessToken,
+        'inbox-instructions': INBOX_INSTRUCTIONS
+      }[kind]
+      clipboard.writeText(text)
+      return {
+        message: {
+          'claude-code-command': 'Copied the Claude Code command.',
+          'claude-desktop-config': 'Copied the Claude Desktop configuration.',
+          'http-token': 'Copied the access token. Keep it private.',
+          'inbox-instructions': 'Copied the inbox instructions. Paste them into your AI chat.'
+        }[kind]
+      }
+    }
+  )
+  handle(IPC_CHANNELS.agentBridgeConnectClaudeDesktop, noInput, () => {
+    const path = agentBridge.connectClaudeDesktop()
+    return {
+      path,
+      message: 'Storybound was added to Claude Desktop. Quit and reopen Claude Desktop to use it.'
+    }
+  })
   handle(IPC_CHANNELS.syncStatus, noInput, () => sync.status())
   handle(IPC_CHANNELS.syncSignUp, syncCredentialsSchema, (input) => sync.signUp(input))
   handle(IPC_CHANNELS.syncSignIn, syncCredentialsSchema, (input) => sync.signIn(input))

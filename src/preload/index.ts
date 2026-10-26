@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { StoryboundApi } from '../shared/types'
+import type { ContentChangedDetail, StoryboundApi } from '../shared/types'
 import {
   APP_CLOSE_READY_CHANNEL,
+  CONTENT_CHANGED_CHANNEL,
   IPC_CHANNELS,
   MENU_COMMANDS,
   MENU_COMMAND_CHANNEL
@@ -127,6 +128,16 @@ const api: StoryboundApi = {
     get: () => invoke(IPC_CHANNELS.settingsGet),
     update: (input) => invoke(IPC_CHANNELS.settingsUpdate, input)
   },
+  agentBridge: {
+    status: () => invoke(IPC_CHANNELS.agentBridgeStatus),
+    update: (input) => invoke(IPC_CHANNELS.agentBridgeUpdate, input),
+    regenerateToken: () => invoke(IPC_CHANNELS.agentBridgeRegenerateToken),
+    chooseInbox: () => invoke(IPC_CHANNELS.agentBridgeChooseInbox),
+    openInbox: () => invoke(IPC_CHANNELS.agentBridgeOpenInbox),
+    scanInbox: () => invoke(IPC_CHANNELS.agentBridgeScanInbox),
+    copy: (kind) => invoke(IPC_CHANNELS.agentBridgeCopy, kind),
+    connectClaudeDesktop: () => invoke(IPC_CHANNELS.agentBridgeConnectClaudeDesktop)
+  },
   sync: {
     status: () => invoke(IPC_CHANNELS.syncStatus),
     signUp: (input) => invoke(IPC_CHANNELS.syncSignUp, input),
@@ -173,6 +184,23 @@ ipcRenderer.on(MENU_COMMAND_CHANNEL, (_event, command: unknown) => {
     MENU_COMMANDS.includes(command as (typeof MENU_COMMANDS)[number])
   ) {
     window.dispatchEvent(new CustomEvent('storybound:command', { detail: command }))
+  }
+})
+
+ipcRenderer.on(CONTENT_CHANGED_CHANNEL, (_event, detail: unknown) => {
+  const candidate = detail as Partial<ContentChangedDetail> | null
+  if (
+    candidate &&
+    typeof candidate.bookId === 'string' &&
+    (candidate.chapterId === null || typeof candidate.chapterId === 'string') &&
+    typeof candidate.message === 'string'
+  ) {
+    const changed: ContentChangedDetail = {
+      bookId: candidate.bookId,
+      chapterId: candidate.chapterId,
+      message: candidate.message
+    }
+    window.dispatchEvent(new CustomEvent('storybound:content-changed', { detail: changed }))
   }
 })
 

@@ -29,7 +29,7 @@ The recovery code is shown when the first vault is created. Losing every unlocke
 
 ## Optional OpenAI writing assistant
 
-No story text is sent to an AI provider during normal library, writing, reading, search, export, or backup use.
+No story text is sent to an AI provider during normal library, writing, reading, search, export, or backup use. (The separate Claude connection described below never makes a request from Storybound; Claude reads and writes through it only when the user is chatting with Claude.)
 
 A network request occurs only when the user:
 
@@ -41,6 +41,18 @@ A network request occurs only when the user:
 That request contains the current chapter, limited book title/blurb context, and the selected instruction. Storybound bounds the submitted text, sends a one-shot Responses API request with `store: false`, and returns an editable suggestion. The user must choose to apply and later save it. API usage may incur charges and remains subject to OpenAI's terms and privacy policy.
 
 Closing the assistant discards the API key from renderer state. Storybound does not retain the key for the next request. Network metadata may still be processed by the operating system, internet provider, and OpenAI as required to deliver the explicitly requested call; `store: false` is not a promise that no service-side security or legal processing can occur.
+
+## Optional AI assistant connections (Claude and the inbox folder)
+
+Both connections are off by default and are controlled in **Settings → AI assistants**.
+
+**Connect Claude.** When switched on, Storybound runs an MCP server that listens only on this computer's loopback address (`127.0.0.1`). It requires a random access token, and refuses requests that carry a browser `Origin` header or an unexpected `Host`, so web pages cannot reach it. The token, the active port, and the on/off settings are kept in `agent-bridge.json` in the application-data folder (readable only by the current user). They are not stored in the library database, so they never appear in backups, packages, vaults, or sync. A cached tool list (`mcp-tools.json`) sits beside it and holds no story content.
+
+Through the connection Claude can list books in the active library, read chapter text, create books, update book details, add chapters, and revise chapters. Revisions keep the previous text in the chapter's revision history. No tool can delete, trash, change settings, or reach other libraries. Storybound itself makes no network request. Whatever Claude reads or writes through these tools becomes part of the user's Claude conversation and is processed by Anthropic under the terms of that Claude product, exactly as if the user had pasted it into the chat.
+
+Claude Desktop and Claude Code launch a small bridge script with Storybound's own executable. **Add to Claude Desktop** writes one `storybound` entry into Claude Desktop's `claude_desktop_config.json`, after saving the previous file as `claude_desktop_config.json.storybound-backup`.
+
+**Inbox folder.** When switched on, Storybound checks the chosen folder (default `Documents/Storybound Inbox`) every few seconds while the app is open. It imports Markdown or text files into the active library and moves each one to `Imported/` or `Failed/`. Files are read locally and never uploaded.
 
 ## Imports, exports, backups, and companion files
 

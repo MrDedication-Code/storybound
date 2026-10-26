@@ -40,6 +40,7 @@ import type {
   UpdateBookInput
 } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
+import { onContentChanged } from '../lib/events'
 import { formatDate, formatNumber } from '../lib/format'
 import { navigate, routes } from '../lib/routing'
 import { BookCover } from '../components/BookCover'
@@ -155,6 +156,14 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
   useEffect(() => {
     void Promise.resolve().then(load)
   }, [load, reload])
+
+  useEffect(
+    () =>
+      onContentChanged((detail) => {
+        if (detail.bookId === bookId) setReload((value) => value + 1)
+      }),
+    [bookId]
+  )
 
   const updateStatus = async (): Promise<void> => {
     if (!book) return

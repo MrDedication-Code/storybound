@@ -77,6 +77,14 @@ export const IPC_CHANNELS = {
   searchLocate: 'storybound:search:locate',
   settingsGet: 'storybound:settings:get',
   settingsUpdate: 'storybound:settings:update',
+  agentBridgeStatus: 'storybound:agent-bridge:status',
+  agentBridgeUpdate: 'storybound:agent-bridge:update',
+  agentBridgeRegenerateToken: 'storybound:agent-bridge:regenerate-token',
+  agentBridgeChooseInbox: 'storybound:agent-bridge:choose-inbox',
+  agentBridgeOpenInbox: 'storybound:agent-bridge:open-inbox',
+  agentBridgeScanInbox: 'storybound:agent-bridge:scan-inbox',
+  agentBridgeCopy: 'storybound:agent-bridge:copy',
+  agentBridgeConnectClaudeDesktop: 'storybound:agent-bridge:connect-claude-desktop',
   syncStatus: 'storybound:sync:status',
   syncSignUp: 'storybound:sync:sign-up',
   syncSignIn: 'storybound:sync:sign-in',
@@ -111,6 +119,7 @@ export const IPC_CHANNELS = {
 
 export const MENU_COMMAND_CHANNEL = 'storybound:menu-command'
 export const APP_CLOSE_READY_CHANNEL = 'storybound:app:close-ready'
+export const CONTENT_CHANGED_CHANNEL = 'storybound:content-changed'
 
 export const MENU_COMMANDS = [
   'new-book',

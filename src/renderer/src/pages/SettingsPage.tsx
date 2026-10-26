@@ -33,6 +33,7 @@ import type {
   TextAlignment
 } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
+import { AssistantSettings } from '../components/AssistantSettings'
 import {
   Button,
   ConfirmDialog,
@@ -52,6 +53,7 @@ const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'reader-defaults', label: 'Reader' },
   { id: 'sync', label: 'Sync & devices' },
+  { id: 'assistants', label: 'AI assistants' },
   { id: 'data', label: 'Data & recovery' },
   { id: 'about', label: 'About' }
 ] as const
@@ -808,6 +810,8 @@ export function SettingsPage({
               </InlineNotice>
             ) : null}
           </section>
+
+          <AssistantSettings notify={notify} />
 
           <section className="settings-section" id="data">
             <div className="settings-section__heading">

@@ -26,6 +26,7 @@ import type {
   Tag
 } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
+import { onContentChanged } from '../lib/events'
 import { navigate, routes } from '../lib/routing'
 import { BookCard } from '../components/BookCard'
 import { DirectImportModal, type DirectImportSubmission } from '../components/DirectImportModal'
@@ -137,6 +138,8 @@ export function LibraryPage({
   useEffect(() => {
     void Promise.resolve().then(loadLibrary)
   }, [loadLibrary, reload])
+
+  useEffect(() => onContentChanged(() => setReload((value) => value + 1)), [])
 
   const refresh = (): void => setReload((value) => value + 1)
 

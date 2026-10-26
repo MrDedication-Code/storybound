@@ -50,7 +50,7 @@ import type {
 } from '@shared/types'
 import { countWords } from '@shared/text'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
-import type { PrepareCloseDetail } from '../lib/events'
+import { onContentChanged, type PrepareCloseDetail } from '../lib/events'
 import { formatNumber, nextChapterTitle } from '../lib/format'
 import { navigate, routes, type BeforeNavigateDetail } from '../lib/routing'
 import { applyStoryPaste, restorePasteCursor } from '../lib/storyPaste'
@@ -95,6 +95,7 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null)
+  const [externalChange, setExternalChange] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [editorView, setEditorView] = useState<EditorView>('edit')
   const [focusMode, setFocusMode] = useState(false)
@@ -178,6 +179,21 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
   useEffect(() => {
     void Promise.resolve().then(load)
   }, [load, reload])
+
+  useEffect(
+    () =>
+      onContentChanged((detail) => {
+        if (detail.bookId !== bookId) return
+        // Never overwrite unsaved typing with an assistant's change; reload only a clean editor.
+        if (!dirtyRef.current) {
+          setExternalChange(false)
+          setReload((value) => value + 1)
+        } else if (detail.chapterId === chapterId) {
+          setExternalChange(true)
+        }
+      }),
+    [bookId, chapterId]
+  )
 
   useEffect(() => {
     try {
@@ -959,6 +975,15 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
               Restore draft
             </Button>
             <Button onClick={() => void discardDraft()}>Discard</Button>
+          </div>
+        ) : null}
+        {externalChange ? (
+          <div className="editor-error">
+            <InlineNotice tone="info">
+              An AI assistant changed this chapter while you were editing. Your unsaved edits are
+              still here. Saving keeps your version, and the assistant’s version stays in Revisions.
+            </InlineNotice>
+            <IconButton icon={X} label="Dismiss notice" onClick={() => setExternalChange(false)} />
           </div>
         ) : null}
         {error ? (

@@ -45,6 +45,18 @@
 - The API key remains in renderer memory only while the modal is mounted. It is not written to SQLite, settings, logs, backups, or exports.
 - No other runtime feature contacts an AI provider.
 
+## AI assistant connections
+
+- **Claude through MCP, served by the app itself:** a local MCP server in the main process writes through the same validated, transactional store methods as the UI. It never touches the SQLite file from outside the running app, which would risk corruption.
+- **Stateless, dependency-free protocol layer:** the server implements MCP's JSON-RPC over Streamable HTTP in JSON-response mode (`initialize`, `ping`, `tools/list`, `tools/call`). This keeps the trust boundary small and auditable without pulling in an SDK.
+- **Loopback, token, Origin and Host checks:** binding to `127.0.0.1` keeps other machines out. The bearer token keeps other local programs out. Refusing any `Origin` and any non-loopback `Host` stops web pages and DNS rebinding.
+- **Stdio bridge run by Storybound's executable:** Claude Desktop and Claude Code launch `resources/mcp-bridge.cjs` with `ELECTRON_RUN_AS_NODE`, so users need no separate Node install and no token in their Claude config. The bridge reads the live port and token from `agent-bridge.json` per message. It answers the handshake from a cached tool list and opens Storybound only when a tool is called.
+- **Bridge settings outside the database:** the token never enters backups, packages, vaults, or sync.
+- **Non-destructive tool set:** list, read, create, append, and revise only. Revision keeps the previous text in revision history. `add_chapter` ignores an exact retry, and `create_book` refuses duplicate titles unless asked, so a model retrying a call cannot clutter the library.
+- **Never overwrite unsaved typing:** an open editor reloads for an outside change only when it has no unsaved edits. Otherwise it shows a notice, and the assistant's version stays in Revisions.
+- **Inbox folder for every other tool:** a polled folder with simple front matter works with any AI or text editor. Processed files move to `Imported/` or `Failed/` with an explanation, files modified in the last few seconds wait, and an identical re-drop is skipped.
+- **Single-instance lock:** Claude may start Storybound while it is already open, so a second launch focuses the existing window and never opens the same database twice.
+
 ## Security and privacy
 
 - No analytics, advertising, mandatory account, hidden backup, or remote font. Encrypted sync is opt-in and can be omitted entirely from an unconfigured build.

@@ -2,9 +2,7 @@
 
 The following ideas are intentionally deferred; they are not part of the current application.
 
-- Optional account-based, end-to-end encrypted synchronisation with clear conflict resolution
 - Real-time co-authoring, comments, and editorial review workflows
-- Native iOS and Android applications
 - Semantic search and fully local embedding models
 - DOCX and additional chat-provider archive importers
 - Richer page-layout and word-processing controls

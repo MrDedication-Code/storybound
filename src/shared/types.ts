@@ -716,6 +716,49 @@ export interface AppInfo {
   dataPath: string
 }
 
+export type AgentActivitySource = 'mcp' | 'inbox'
+
+export interface AgentActivity {
+  at: string
+  source: AgentActivitySource
+  message: string
+  failed: boolean
+}
+
+export interface AgentBridgeStatus {
+  mcpEnabled: boolean
+  mcpRunning: boolean
+  mcpUrl: string | null
+  mcpError: string | null
+  inboxEnabled: boolean
+  inboxPath: string | null
+  inboxError: string | null
+  claudeCodeCommand: string
+  claudeDesktopConfig: string
+  claudeDesktopConfigPath: string | null
+  recentActivity: AgentActivity[]
+}
+
+export interface UpdateAgentBridgeInput {
+  mcpEnabled?: boolean
+  inboxEnabled?: boolean
+}
+
+export type AgentBridgeCopyKind =
+  'claude-code-command' | 'claude-desktop-config' | 'http-token' | 'inbox-instructions'
+
+export interface InboxScanResult {
+  imported: number
+  failed: number
+  skipped: number
+}
+
+export interface ContentChangedDetail {
+  bookId: string
+  chapterId: string | null
+  message: string
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
 
 export interface StoryboundApi {
@@ -836,6 +879,16 @@ export interface StoryboundApi {
   settings: {
     get(): Promise<ApiResult<ApplicationSettings>>
     update(input: Partial<ApplicationSettings>): Promise<ApiResult<ApplicationSettings>>
+  }
+  agentBridge: {
+    status(): Promise<ApiResult<AgentBridgeStatus>>
+    update(input: UpdateAgentBridgeInput): Promise<ApiResult<AgentBridgeStatus>>
+    regenerateToken(): Promise<ApiResult<AgentBridgeStatus>>
+    chooseInbox(): Promise<ApiResult<AgentBridgeStatus>>
+    openInbox(): Promise<ApiResult<OperationResult>>
+    scanInbox(): Promise<ApiResult<InboxScanResult>>
+    copy(kind: AgentBridgeCopyKind): Promise<ApiResult<OperationResult>>
+    connectClaudeDesktop(): Promise<ApiResult<OperationResult>>
   }
   sync: {
     status(): Promise<ApiResult<SyncRuntimeStatus>>

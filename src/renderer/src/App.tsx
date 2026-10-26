@@ -6,7 +6,7 @@ import { HelpModal } from './components/HelpModal'
 import { AppShell, Toast } from './components/AppShell'
 import { Button, ErrorState, LoadingState } from './components/ui'
 import { readableError, storyboundApi, unwrap } from './lib/api'
-import type { PrepareCloseDetail } from './lib/events'
+import { onContentChanged, type PrepareCloseDetail } from './lib/events'
 import { navigate, routes, useRoute } from './lib/routing'
 import { DEFAULT_SETTINGS } from './lib/settings'
 
@@ -121,6 +121,8 @@ function App(): React.JSX.Element {
     setToast(message)
     window.setTimeout(() => setToast((current) => (current === message ? '' : current)), 3200)
   }, [])
+
+  useEffect(() => onContentChanged((detail) => notify(detail.message)), [notify])
 
   const updateSettings = useCallback(
     async (changes: Partial<ApplicationSettings>): Promise<void> => {

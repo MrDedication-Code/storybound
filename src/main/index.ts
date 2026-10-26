@@ -14,13 +14,19 @@ import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { APP_NAME } from '../shared/types'
 import { closeReadySchema } from '../shared/validation'
-import { APP_CLOSE_READY_CHANNEL, MENU_COMMAND_CHANNEL, type MenuCommand } from './channels'
+import {
+  APP_CLOSE_READY_CHANNEL,
+  CONTENT_CHANGED_CHANNEL,
+  MENU_COMMAND_CHANNEL,
+  type MenuCommand
+} from './channels'
 import { createStoryboundPaths } from './database'
 import { registerStoryboundIpc } from './ipc'
 import { AppLogger } from './logger'
 import { registerMediaProtocol } from './media-protocol'
 import { StoryboundStore } from './store'
 import { StoryboundSyncController } from './cloud/syncController'
+import { AgentBridgeController } from './agentBridge'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -34,6 +40,11 @@ app.setName(APP_NAME)
 const userDataOverride = process.env.STORYBOUND_USER_DATA?.trim()
 if (userDataOverride) app.setPath('userData', resolve(userDataOverride))
 
+// One process per data folder: a second launch (for example Claude starting Storybound while
+// it is already open) must focus the existing window, never open the same database twice.
+const hasInstanceLock = app.requestSingleInstanceLock()
+if (!hasInstanceLock) app.quit()
+
 let mainWindow: BrowserWindow | null = null
 let store: StoryboundStore | null = null
 let logger: AppLogger | null = null
@@ -43,6 +54,16 @@ let backupTimer: ReturnType<typeof setInterval> | null = null
 let backupRunning = false
 let syncController: StoryboundSyncController | null = null
 let syncTimer: ReturnType<typeof setInterval> | null = null
+let agentBridge: AgentBridgeController | null = null
+
+function bridgeScriptPath(): string {
+  // electron-builder unpacks resources/** from the asar so an external process can run it.
+  return join(
+    app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked'),
+    'resources',
+    'mcp-bridge.cjs'
+  )
+}
 
 async function runBackgroundSync(): Promise<void> {
   if (!syncController || isQuitting) return
@@ -358,9 +379,28 @@ async function start(): Promise<void> {
   configureSessionSecurity()
   registerMediaProtocol(store.paths.media, logger)
   syncController = await StoryboundSyncController.create(store)
+  agentBridge = await AgentBridgeController.create({
+    store,
+    dataPath: store.paths.root,
+    version: app.getVersion(),
+    executablePath: process.execPath,
+    bridgeScriptPath: bridgeScriptPath(),
+    defaultInboxPath: join(app.getPath('documents'), 'Storybound Inbox'),
+    claudeDesktopConfigPath:
+      process.platform === 'linux'
+        ? null
+        : join(app.getPath('appData'), 'Claude', 'claude_desktop_config.json'),
+    logger,
+    onChange: (change) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(CONTENT_CHANGED_CHANNEL, change)
+      }
+    }
+  })
   unregisterIpc = registerStoryboundIpc({
     store,
     sync: syncController,
+    agentBridge,
     logger,
     getWindow: () => mainWindow
   })
@@ -376,14 +416,25 @@ async function start(): Promise<void> {
   })
 }
 
-app
-  .whenReady()
-  .then(start)
-  .catch((error) => {
-    logger?.error('startup', error)
-    dialog.showErrorBox('Storybound could not start', 'Please restart Storybound and try again.')
-    app.quit()
+if (hasInstanceLock) {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      if (store) mainWindow = createWindow()
+      return
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
   })
+
+  app
+    .whenReady()
+    .then(start)
+    .catch((error) => {
+      logger?.error('startup', error)
+      dialog.showErrorBox('Storybound could not start', 'Please restart Storybound and try again.')
+      app.quit()
+    })
+}
 
 app.on('before-quit', () => {
   isQuitting = true
@@ -399,6 +450,8 @@ app.on('will-quit', () => {
   backupTimer = null
   if (syncTimer) clearInterval(syncTimer)
   syncTimer = null
+  void agentBridge?.stop()
+  agentBridge = null
   unregisterIpc?.()
   unregisterIpc = null
   store?.close()

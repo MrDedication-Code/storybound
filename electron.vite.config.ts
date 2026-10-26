@@ -12,9 +12,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ['MAIN_VITE_', 'STORYBOUND_SUPABASE_'])
   const cloudDefine: Record<string, string> = {}
   if (env.STORYBOUND_SUPABASE_URL) {
-    cloudDefine['process.env.STORYBOUND_SUPABASE_URL'] = JSON.stringify(
-      env.STORYBOUND_SUPABASE_URL
-    )
+    cloudDefine['process.env.STORYBOUND_SUPABASE_URL'] = JSON.stringify(env.STORYBOUND_SUPABASE_URL)
   }
   if (env.STORYBOUND_SUPABASE_PUBLISHABLE_KEY) {
     cloudDefine['process.env.STORYBOUND_SUPABASE_PUBLISHABLE_KEY'] = JSON.stringify(

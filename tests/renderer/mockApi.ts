@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type {
+  AgentBridgeStatus,
   ApiResult,
   Annotation,
   ApplicationSettings,
@@ -173,6 +174,20 @@ const storyRelation: StoryEntityRelation = {
 
 export function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
+}
+
+export const agentBridgeStatus: AgentBridgeStatus = {
+  mcpEnabled: false,
+  mcpRunning: false,
+  mcpUrl: null,
+  mcpError: null,
+  inboxEnabled: false,
+  inboxPath: null,
+  inboxError: null,
+  claudeCodeCommand: 'claude mcp add --scope user storybound -- storybound-bridge',
+  claudeDesktopConfig: '{}',
+  claudeDesktopConfigPath: '/tmp/Claude/claude_desktop_config.json',
+  recentActivity: []
 }
 
 export function makeApi(): StoryboundApi {
@@ -516,6 +531,16 @@ export function makeApi(): StoryboundApi {
     settings: {
       get: vi.fn(async () => ok(settings)),
       update: vi.fn(async (input) => ok({ ...settings, ...input }))
+    },
+    agentBridge: {
+      status: vi.fn(async () => ok(agentBridgeStatus)),
+      update: vi.fn(async (input) => ok({ ...agentBridgeStatus, ...input })),
+      regenerateToken: vi.fn(async () => ok(agentBridgeStatus)),
+      chooseInbox: vi.fn(async () => ok(agentBridgeStatus)),
+      openInbox: vi.fn(async () => ok({ message: 'Opened the inbox folder.' })),
+      scanInbox: vi.fn(async () => ok({ imported: 0, failed: 0, skipped: 0 })),
+      copy: vi.fn(async () => ok({ message: 'Copied.' })),
+      connectClaudeDesktop: vi.fn(async () => ok({ message: 'Connected.' }))
     },
     sync: {
       status: vi.fn(async () =>
