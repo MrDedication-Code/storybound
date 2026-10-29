@@ -2703,6 +2703,24 @@ export class StoryboundStore {
     return rows.map((row) => this.mapAnnotation(row))
   }
 
+  /** Active annotations anchored to one chapter, regardless of which library is active. */
+  listChapterAnnotations(id: string): Annotation[] {
+    const chapterId = idSchema.parse(id)
+    const rows = this.database
+      .prepare(
+        `SELECT annotation.id, annotation.book_id, chapter.id AS chapter_id,
+          chapter.title AS chapter_title, annotation.kind, annotation.body, annotation.color,
+          annotation.created_at, annotation.updated_at, annotation.row_version, ${ANCHOR_SELECT}
+         FROM annotations annotation
+         JOIN chapter_anchors anchor ON anchor.id = annotation.anchor_id
+         JOIN chapters chapter ON chapter.id = anchor.chapter_id
+         WHERE chapter.id = ? AND annotation.deleted_at IS NULL AND anchor.deleted_at IS NULL
+         ORDER BY anchor.fallback_location, annotation.created_at`
+      )
+      .all(chapterId) as AnnotationRow[]
+    return rows.map((row) => this.mapAnnotation(row))
+  }
+
   /** Annotations that listAnnotations hides because their chapter is in Trash. */
   countAnnotationsInTrashedChapters(id: string): number {
     const bookId = idSchema.parse(id)

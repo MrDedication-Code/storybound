@@ -302,6 +302,38 @@ describe('get_annotations', () => {
     })
   })
 
+  it('reports highlights that a rewrite leaves orphaned without changing the rewrite', async () => {
+    const { store, first } = await bookWithNotes()
+    const rewritten = 'A new storm opened the chapter. Rain fell on the harbour.'
+    const result = callTool(store, 'update_chapter', { chapterId: first, content: rewritten })
+
+    expect(store.getChapter(first).content).toBe(rewritten)
+    expect(result).toMatchObject({ updated: true, previousVersionSaved: true })
+    expect(result.orphanedAnnotations).toEqual([
+      {
+        annotationId: expect.any(String),
+        highlightedText: 'The ledger was missing a page',
+        note: 'Plant this earlier'
+      }
+    ])
+    expect(store.listChapterAnnotations(first)).toHaveLength(2)
+
+    // Already-orphaned highlights are not reported again by a later revision.
+    const again = callTool(store, 'update_chapter', {
+      chapterId: first,
+      content: `${rewritten} The tide turned.`
+    })
+    expect(again.orphanedAnnotations).toEqual([])
+  })
+
+  it('returns an empty orphan list for a title-only change', async () => {
+    const { store, second } = await bookWithNotes()
+    expect(
+      callTool(store, 'update_chapter', { chapterId: second, title: 'Two, Revised' })
+        .orphanedAnnotations
+    ).toEqual([])
+  })
+
   it('counts notes left on chapters that are in Trash', async () => {
     const { store, bookId, second } = await bookWithNotes()
     store.removeChapter(second)

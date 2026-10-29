@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { BookDetail, BookSummary, Chapter } from '../../shared/types'
+import type { Annotation, BookDetail, BookSummary, Chapter } from '../../shared/types'
 import { StoryboundError } from '../errors'
 import type { StoryboundStore } from '../store'
 import { locateAnchor } from './annotationAnchors'
@@ -121,6 +121,12 @@ function describeChapter(chapter: Chapter, number: number): Record<string, unkno
 
 function chapterNumber(store: StoryboundStore, chapter: Chapter): number {
   return store.getBook(chapter.bookId).chapters.findIndex((item) => item.id === chapter.id) + 1
+}
+
+function orphanedIn(annotations: Annotation[], content: string): Annotation[] {
+  return annotations.filter(
+    (annotation) => locateAnchor(content, annotation.anchor).status === 'orphaned'
+  )
 }
 
 function describeAnnotations(
@@ -445,7 +451,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     name: 'update_chapter',
     title: 'Update chapter',
     description:
-      'Replace a chapter’s title and/or text when the user asks for a revision. The previous version stays in the chapter’s revision history.',
+      'Replace a chapter’s title and/or text when the user asks for a revision. The previous version stays in the chapter’s revision history. The response lists orphanedAnnotations: highlights whose words this rewrite removed (with the original words and the user’s note), so you can tell the user or carry the feedback into the new text. It is empty when none were affected.',
     schema: z
       .object({
         chapterId: chapterIdSchema,
@@ -464,18 +470,49 @@ export const AGENT_TOOLS: AgentTool[] = [
     run: (store, input) => {
       const current = store.getChapter(input.chapterId)
       const title = input.title ?? current.title
+      // The orphan report is read-only and best-effort: it never blocks or alters the revision.
+      let alreadyOrphaned: Set<string> | null = null
+      try {
+        alreadyOrphaned = new Set(
+          orphanedIn(store.listChapterAnnotations(current.id), current.content).map(
+            (annotation) => annotation.id
+          )
+        )
+      } catch {
+        alreadyOrphaned = null
+      }
       const chapter = store.updateChapter({
         id: input.chapterId,
         title: input.title,
         content:
           input.content === undefined ? undefined : normalizeChapterContent(title, input.content)
       })
+      let orphanedAnnotations: Record<string, string>[] | null = null
+      if (alreadyOrphaned) {
+        const before = alreadyOrphaned
+        try {
+          orphanedAnnotations = orphanedIn(
+            store.listChapterAnnotations(chapter.id),
+            chapter.content
+          )
+            .filter((annotation) => !before.has(annotation.id))
+            .map((annotation) => ({
+              annotationId: annotation.id,
+              highlightedText: annotation.anchor.quote,
+              note: annotation.body
+            }))
+        } catch {
+          orphanedAnnotations = null
+        }
+      }
       const book = store.getBook(chapter.bookId)
       return {
         text: json({
           updated: true,
           previousVersionSaved: true,
-          ...describeChapter(chapter, chapterNumber(store, chapter))
+          ...describeChapter(chapter, chapterNumber(store, chapter)),
+          orphanedAnnotations: orphanedAnnotations ?? [],
+          ...(orphanedAnnotations === null ? { orphanedAnnotationsCheckFailed: true } : {})
         }),
         change: {
           bookId: book.id,
