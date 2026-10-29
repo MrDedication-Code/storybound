@@ -2703,6 +2703,25 @@ export class StoryboundStore {
     return rows.map((row) => this.mapAnnotation(row))
   }
 
+  /** Annotations that listAnnotations hides because their chapter is in Trash. */
+  countAnnotationsInTrashedChapters(id: string): number {
+    const bookId = idSchema.parse(id)
+    this.requireActiveStoryBook(bookId)
+    return Number(
+      this.database
+        .prepare(
+          `SELECT COUNT(*)
+           FROM annotations annotation
+           JOIN chapter_anchors anchor ON anchor.id = annotation.anchor_id
+           JOIN chapters chapter ON chapter.id = anchor.chapter_id
+           WHERE annotation.book_id = ? AND annotation.deleted_at IS NULL
+             AND anchor.deleted_at IS NULL AND chapter.deleted_at IS NOT NULL`
+        )
+        .pluck()
+        .get(bookId)
+    )
+  }
+
   createAnnotation(input: CreateAnnotationInput): Annotation {
     const parsed = createAnnotationSchema.parse(input)
     this.requireActiveStoryBook(parsed.bookId)

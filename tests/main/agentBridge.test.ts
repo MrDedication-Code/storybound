@@ -24,6 +24,7 @@ import {
   StoryboundMcpServer,
   SUPPORTED_PROTOCOL_VERSIONS
 } from '../../src/main/agentBridge/mcpServer'
+import { locateAnchor } from '../../src/main/agentBridge/annotationAnchors'
 import { AGENT_TOOLS, normalizeChapterContent } from '../../src/main/agentBridge/tools'
 import { StoryboundStore } from '../../src/main/store'
 
@@ -137,6 +138,184 @@ describe('agent tools', () => {
     )
     expect(normalizeChapterContent('The Road', '# A Different Heading\n\nText')).toBe(
       '# A Different Heading\n\nText'
+    )
+  })
+})
+
+describe('annotation anchors', () => {
+  const content = 'The vault was empty. She counted twice. The vault was empty, again.'
+
+  it('keeps exact offsets, relocates moved text, and flags removed text as orphaned', () => {
+    const anchor = {
+      startOffset: 21,
+      endOffset: 38,
+      fallbackLocation: 0.3,
+      quote: 'She counted twice',
+      prefix: 'The vault was empty. ',
+      suffix: '. The vault'
+    }
+    expect(locateAnchor(content, anchor)).toEqual({ status: 'exact', start: 21, end: 38 })
+    const edited = `A new opening line. ${content}`
+    expect(locateAnchor(edited, anchor)).toEqual({ status: 'relocated', start: 41, end: 58 })
+    expect(locateAnchor('Completely rewritten.', anchor)).toEqual({
+      status: 'orphaned',
+      start: null,
+      end: null
+    })
+  })
+
+  it('uses the saved surroundings to pick the right copy of repeated words', () => {
+    const anchor = {
+      startOffset: null,
+      endOffset: null,
+      fallbackLocation: 0,
+      quote: 'The vault was empty',
+      prefix: 'She counted twice. ',
+      suffix: ', again.'
+    }
+    expect(locateAnchor(content, anchor)).toMatchObject({ status: 'relocated', start: 40 })
+  })
+
+  it('matches a highlight taken from the rendered page against Markdown source', () => {
+    const markdown = 'He said *nothing at all*,\nand left.'
+    const located = locateAnchor(markdown, {
+      startOffset: null,
+      endOffset: null,
+      fallbackLocation: 0.2,
+      quote: 'nothing at all, and left',
+      prefix: '',
+      suffix: ''
+    })
+    expect(located.status).toBe('relocated')
+    expect(markdown.slice(located.start!, located.end!)).toBe('nothing at all*,\nand left')
+  })
+
+  it('treats a note without selected text as a chapter position', () => {
+    expect(
+      locateAnchor(content, {
+        startOffset: null,
+        endOffset: null,
+        fallbackLocation: 0.5,
+        quote: '',
+        prefix: '',
+        suffix: ''
+      })
+    ).toEqual({ status: 'chapter-position', start: 34, end: 34 })
+  })
+})
+
+describe('get_annotations', () => {
+  async function bookWithNotes(): Promise<{
+    store: StoryboundStore
+    bookId: string
+    first: string
+    second: string
+  }> {
+    const store = await createStore()
+    const { bookId } = callTool(store, 'create_book', { title: 'Annotated' })
+    const first = callTool(store, 'add_chapter', {
+      bookId,
+      title: 'One',
+      content: 'Rain fell on the harbour. The ledger was missing a page.'
+    }).chapterId as string
+    const second = callTool(store, 'add_chapter', {
+      bookId,
+      title: 'Two',
+      content: 'Morning came. Nobody mentioned the ledger.'
+    }).chapterId as string
+    const highlight = (chapterId: string, quote: string, body: string, color = 'gold'): void => {
+      const text = store.getChapter(chapterId).content
+      const startOffset = text.indexOf(quote)
+      store.createAnnotation({
+        bookId: bookId as string,
+        chapterId,
+        kind: 'highlight',
+        body,
+        color,
+        anchor: {
+          startOffset,
+          endOffset: startOffset + quote.length,
+          fallbackLocation: startOffset / text.length,
+          quote
+        }
+      })
+    }
+    highlight(second, 'Nobody mentioned the ledger', 'Should someone notice?', 'blue')
+    highlight(first, 'The ledger was missing a page', 'Plant this earlier')
+    highlight(first, 'Rain fell', '')
+    return { store, bookId: bookId as string, first, second }
+  }
+
+  it('returns every annotation in reading order with text, context, and notes', async () => {
+    const { store, bookId, first } = await bookWithNotes()
+    const result = callTool(store, 'get_annotations', { bookId })
+    const annotations = result.annotations as Array<Record<string, unknown>>
+
+    expect(result).toMatchObject({ bookTitle: 'Annotated', annotationCount: 3, orphanedCount: 0 })
+    expect(annotations.map((item) => item.highlightedText)).toEqual([
+      'Rain fell',
+      'The ledger was missing a page',
+      'Nobody mentioned the ledger'
+    ])
+    expect(annotations[1]).toMatchObject({
+      chapterId: first,
+      chapterTitle: 'One',
+      chapterNumber: 1,
+      type: 'highlight',
+      contextBefore: 'Rain fell on the harbour. ',
+      contextAfter: '.',
+      note: 'Plant this earlier',
+      color: 'gold',
+      orphaned: false,
+      anchorStatus: 'exact'
+    })
+    expect(annotations[0].note).toBe('')
+    expect(annotations[2]).toMatchObject({ chapterNumber: 2, color: 'blue' })
+  })
+
+  it('filters to one chapter', async () => {
+    const { store, second } = await bookWithNotes()
+    const result = callTool(store, 'get_annotations', { chapterId: second })
+    expect(result).toMatchObject({ chapterTitle: 'Two', annotationCount: 1 })
+  })
+
+  it('keeps notes whose text was rewritten away, flagged as orphaned with their original words', async () => {
+    const { store, bookId, first } = await bookWithNotes()
+    callTool(store, 'update_chapter', {
+      chapterId: first,
+      content: 'A new storm opened the chapter. Rain fell on the harbour.'
+    })
+    const result = callTool(store, 'get_annotations', { bookId })
+    const annotations = result.annotations as Array<Record<string, unknown>>
+
+    expect(result).toMatchObject({ annotationCount: 3, orphanedCount: 1 })
+    expect(annotations.find((item) => item.note === 'Plant this earlier')).toMatchObject({
+      orphaned: true,
+      anchorStatus: 'orphaned',
+      highlightedText: 'The ledger was missing a page',
+      contextBefore: 'Rain fell on the harbour. '
+    })
+    expect(annotations.find((item) => item.highlightedText === 'Rain fell')).toMatchObject({
+      orphaned: false,
+      anchorStatus: 'relocated',
+      contextBefore: 'A new storm opened the chapter. '
+    })
+  })
+
+  it('counts notes left on chapters that are in Trash', async () => {
+    const { store, bookId, second } = await bookWithNotes()
+    store.removeChapter(second)
+    expect(callTool(store, 'get_annotations', { bookId })).toMatchObject({
+      annotationCount: 2,
+      annotationsInTrashedChapters: 1
+    })
+  })
+
+  it('requires exactly one of bookId or chapterId', async () => {
+    const { store, bookId, first } = await bookWithNotes()
+    expect(() => callTool(store, 'get_annotations', {})).toThrow(/either bookId or chapterId/)
+    expect(() => callTool(store, 'get_annotations', { bookId, chapterId: first })).toThrow(
+      /either bookId or chapterId/
     )
   })
 })

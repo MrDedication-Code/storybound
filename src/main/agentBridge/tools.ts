@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { BookDetail, BookSummary, Chapter } from '../../shared/types'
 import { StoryboundError } from '../errors'
 import type { StoryboundStore } from '../store'
+import { locateAnchor } from './annotationAnchors'
 
 export interface AgentContentChange {
   bookId: string
@@ -37,12 +38,16 @@ export const MCP_SERVER_INSTRUCTIONS = [
   'per story, then add_chapter for each chapter in reading order, normally after the user has',
   'approved that chapter. Use get_book and get_chapter to re-read earlier chapters for continuity.',
   'Use update_chapter only when the user asks to revise a chapter; the previous text is kept in',
-  'the chapter’s revision history. Chapter content is Markdown prose. Do not repeat the chapter',
+  'the chapter’s revision history. Call get_annotations to read the highlights and notes the user',
+  'left on chapters, and take them into account when writing or revising; an annotation marked',
+  'orphaned no longer matches the current text but still carries the user’s note and the text it',
+  'was attached to. Chapter content is Markdown prose. Do not repeat the chapter',
   'title as a heading inside the content, and never include notes to the user in chapter text.',
   'Nothing can be deleted through these tools.'
 ].join(' ')
 
 const LIST_LIMIT = 1000
+const ANNOTATION_CONTEXT_CHARACTERS = 150
 
 const bookIdSchema = z.uuid().describe('The bookId returned by list_books or create_book.')
 const chapterIdSchema = z.uuid().describe('The chapterId returned by get_book or add_chapter.')
@@ -116,6 +121,74 @@ function describeChapter(chapter: Chapter, number: number): Record<string, unkno
 
 function chapterNumber(store: StoryboundStore, chapter: Chapter): number {
   return store.getBook(chapter.bookId).chapters.findIndex((item) => item.id === chapter.id) + 1
+}
+
+function describeAnnotations(
+  store: StoryboundStore,
+  bookId: string,
+  chapterId: string | null
+): Record<string, unknown>[] {
+  const book = store.getBook(bookId)
+  const numbers = new Map(book.chapters.map((chapter, index) => [chapter.id, index + 1]))
+  const contents = new Map<string, string>()
+  const contentOf = (id: string): string => {
+    if (!contents.has(id)) contents.set(id, store.getChapter(id).content)
+    return contents.get(id)!
+  }
+
+  return store
+    .listAnnotations(bookId)
+    .filter((annotation) => chapterId === null || annotation.chapterId === chapterId)
+    .map((annotation) => {
+      const content = contentOf(annotation.chapterId)
+      const located = locateAnchor(content, annotation.anchor)
+      const orphaned = located.status === 'orphaned'
+      const start = located.start ?? Math.round(annotation.anchor.fallbackLocation * content.length)
+      const end = located.end ?? start
+      return {
+        sortKey: [numbers.get(annotation.chapterId) ?? 0, start, annotation.createdAt] as const,
+        value: {
+          annotationId: annotation.id,
+          chapterId: annotation.chapterId,
+          chapterTitle: annotation.chapterTitle,
+          chapterNumber: numbers.get(annotation.chapterId) ?? null,
+          type: annotation.kind,
+          // An orphan keeps the words and surroundings saved when it was made, so its note
+          // always stays meaningful even though that text is gone from the chapter.
+          highlightedText: orphaned
+            ? annotation.anchor.quote
+            : located.status === 'chapter-position'
+              ? ''
+              : content.slice(start, end),
+          contextBefore: orphaned
+            ? annotation.anchor.prefix
+            : content.slice(Math.max(0, start - ANNOTATION_CONTEXT_CHARACTERS), start),
+          contextAfter: orphaned
+            ? annotation.anchor.suffix
+            : content.slice(end, end + ANNOTATION_CONTEXT_CHARACTERS),
+          note: annotation.body,
+          color: annotation.color,
+          orphaned,
+          anchorStatus: located.status,
+          positionInChapterPercent: Math.round(
+            (content.length === 0 ? annotation.anchor.fallbackLocation : start / content.length) *
+              100
+          ),
+          createdAt: annotation.createdAt,
+          updatedAt: annotation.updatedAt
+        }
+      }
+    })
+    .sort((left, right) => {
+      const [leftChapter, leftStart, leftCreated] = left.sortKey
+      const [rightChapter, rightStart, rightCreated] = right.sortKey
+      return (
+        leftChapter - rightChapter ||
+        leftStart - rightStart ||
+        leftCreated.localeCompare(rightCreated)
+      )
+    })
+    .map((entry) => entry.value)
 }
 
 function defineTool<S extends z.ZodType>(tool: {
@@ -204,6 +277,39 @@ export const AGENT_TOOLS: AgentTool[] = [
         text: json({
           ...describeChapter(chapter, chapterNumber(store, chapter)),
           content: chapter.content
+        })
+      }
+    }
+  }),
+  defineTool({
+    name: 'get_annotations',
+    title: 'Get highlights and notes',
+    description:
+      'Read the highlights and notes the user left in a book (pass bookId) or one chapter (pass chapterId), in reading order. Each result has the highlighted text, about 150 characters of text before and after it, the user’s note, its colour, and timestamps. orphaned: true means the chapter was edited and the highlighted words no longer appear; the original words and note are still returned. type "note" with anchorStatus "chapter-position" is a note pinned to a place in the chapter rather than to specific words. Storybound has no labels, tags, or resolved status for notes.',
+    schema: z
+      .object({
+        bookId: bookIdSchema.optional().describe('Return every annotation in this book.'),
+        chapterId: chapterIdSchema.optional().describe('Return only this chapter’s annotations.')
+      })
+      .refine((value) => (value.bookId === undefined) !== (value.chapterId === undefined), {
+        message: 'Supply either bookId or chapterId, not both.'
+      }),
+    annotations: readOnly,
+    run: (store, input) => {
+      const chapter = input.chapterId ? store.getChapter(input.chapterId) : null
+      const bookId = chapter ? chapter.bookId : input.bookId!
+      const book = store.getBook(bookId)
+      const annotations = describeAnnotations(store, bookId, chapter?.id ?? null)
+      const inTrash = chapter ? 0 : store.countAnnotationsInTrashedChapters(bookId)
+      return {
+        text: json({
+          bookId: book.id,
+          bookTitle: book.title,
+          ...(chapter ? { chapterId: chapter.id, chapterTitle: chapter.title } : {}),
+          annotationCount: annotations.length,
+          orphanedCount: annotations.filter((annotation) => annotation.orphaned).length,
+          ...(inTrash > 0 ? { annotationsInTrashedChapters: inTrash } : {}),
+          annotations
         })
       }
     }

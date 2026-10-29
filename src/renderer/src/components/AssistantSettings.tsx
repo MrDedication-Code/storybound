@@ -175,11 +175,17 @@ export function AssistantSettings({ notify }: AssistantSettingsProps): React.JSX
             <li>“Let’s write a mystery novel together. Save it to Storybound as we go.”</li>
             <li>“Add the chapter you just wrote to my Storybound book.”</li>
             <li>“Read chapter 4 of The Lighthouse Keeper and revise the ending.”</li>
+            <li>“Read my notes on chapter 2 and fix what I flagged.”</li>
           </ul>
           <h4>What Claude can do</h4>
           <ul>
             <li>
               See the titles and chapters of books in your active library, and read chapter text.
+            </li>
+            <li>
+              Read the highlights and notes you leave in the reader, so it can act on your feedback.
+              If a chapter is rewritten and the highlighted words disappear, Claude is still shown
+              your note and the words it was attached to.
             </li>
             <li>Create a book, and set its blurb, status, series and author.</li>
             <li>Add chapters to the end of a book, in reading order.</li>
