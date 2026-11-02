@@ -13,6 +13,7 @@
 - **Atomic and transactional storage:** multi-record edits use transactions; file exports use temporary files and atomic replacement.
 - **Acknowledged application close:** Electron waits for the renderer to flush the newest editor revision and reading position, with an explicit user choice only if saving remains stuck.
 - **Separate native mobile client:** Expo/React Native provides iOS and Android UI while sharing versioned contracts and cryptography with Electron. Each client owns a local SQLite database and remains usable offline.
+- **Device linking by approval:** a new device can join without the recovery code. Each side publishes a one-time x25519 public key, both screens show six words (48 bits) derived from the vault, the request and both keys, and the user confirms on both devices before the approver seals the vault key for the newcomer. Any key substituted in transit, including by the server, changes the words. The ephemeral approver key lives only in memory, so a request acknowledged before a restart must be started again. `tests/main/supabaseDeviceLink.test.ts` runs the RPCs on in-memory Postgres (PGlite), so they are tested without Docker.
 - **Optional encrypted Supabase transport:** Supabase Auth, Postgres RPCs, and RLS provide account/device ownership and a durable revision log. AES-256-GCM payloads are encrypted before transport; recovery and vault keys stay in OS-protected device storage.
 
 ## Data portability

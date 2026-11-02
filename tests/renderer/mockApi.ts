@@ -571,6 +571,11 @@ export function makeApi(): StoryboundApi {
       rotateRecoveryCode: vi.fn(async () => {
         throw new Error('Sync is not configured in this test.')
       }),
+      listLinkRequests: vi.fn(async () => ok([])),
+      approveLinkRequest: vi.fn(async () => {
+        throw new Error('Sync is not configured in this test.')
+      }),
+      declineLinkRequest: vi.fn(async () => ok(undefined)),
       recover: vi.fn(async () => {
         throw new Error('Sync is not configured in this test.')
       }),

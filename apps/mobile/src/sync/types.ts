@@ -1,4 +1,9 @@
-import type { SyncEnableResult, SyncRuntimeStatus, SyncRunResult } from '@storybound/contracts'
+import type {
+  DeviceLinkState,
+  SyncEnableResult,
+  SyncRuntimeStatus,
+  SyncRunResult
+} from '@storybound/contracts'
 
 export type CoreSyncEntityType = 'library' | 'book' | 'chapter' | 'reading-state'
 export type CoreSyncOperation = 'upsert' | 'delete'
@@ -10,6 +15,11 @@ export interface MobileSyncController {
   signOut(): Promise<SyncRuntimeStatus>
   createVault(deviceName?: string): Promise<SyncEnableResult>
   recoverVault(recoveryCode: string, deviceName?: string): Promise<SyncRuntimeStatus>
+  /** Starts linking this device by approval from an unlocked device instead of a code. */
+  startDeviceLink(deviceName?: string): Promise<DeviceLinkState>
+  checkDeviceLink(): Promise<DeviceLinkState | null>
+  confirmDeviceLinkWords(): Promise<DeviceLinkState | null>
+  cancelDeviceLink(): Promise<void>
   syncNow(): Promise<SyncRunResult>
 }
 

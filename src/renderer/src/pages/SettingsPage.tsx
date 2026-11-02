@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Cloud,
+  Smartphone,
   Database,
   Download,
   FolderOpen,
@@ -29,6 +30,7 @@ import type {
   ReaderTheme,
   SyncConflictRecord,
   SyncDeviceSummary,
+  SyncLinkRequestSummary,
   SyncRuntimeStatus,
   TextAlignment
 } from '@shared/types'
@@ -48,6 +50,8 @@ interface SettingsPageProps {
   updateSettings: (changes: Partial<ApplicationSettings>) => Promise<void>
   notify: (message: string) => void
 }
+
+const LINK_REQUEST_POLL_MILLISECONDS = 3_000
 
 const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
@@ -87,6 +91,7 @@ export function SettingsPage({
   const [syncPassword, setSyncPassword] = useState('')
   const [recoveryCode, setRecoveryCode] = useState('')
   const [newRecoveryCode, setNewRecoveryCode] = useState('')
+  const [linkRequests, setLinkRequests] = useState<SyncLinkRequestSummary[]>([])
 
   const load = useCallback(async (): Promise<void> => {
     setError('')
@@ -199,6 +204,28 @@ export function SettingsPage({
   const refreshBackupPlans = async (): Promise<void> => {
     setBackupPlans(unwrap(await storyboundApi().data.backupPlans.list()))
   }
+
+  // While this page is open with sync unlocked, watch for new devices asking to join.
+  const syncPhase = syncStatus?.phase
+  useEffect(() => {
+    if (syncPhase !== 'idle') return
+    let active = true
+    const poll = async (): Promise<void> => {
+      try {
+        const requests = unwrap(await storyboundApi().sync.listLinkRequests())
+        if (active) setLinkRequests(requests)
+      } catch {
+        // A missed poll is retried on the next tick; nothing is approved automatically.
+      }
+    }
+    void poll()
+    const timer = window.setInterval(() => void poll(), LINK_REQUEST_POLL_MILLISECONDS)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      setLinkRequests([])
+    }
+  }, [syncPhase])
 
   const refreshSync = async (): Promise<void> => {
     const status = unwrap(await storyboundApi().sync.status())
@@ -725,6 +752,65 @@ export function SettingsPage({
                     Sign out
                   </Button>
                 </div>
+                {linkRequests.map((request) => (
+                  <div className="link-request" key={request.id} role="alert">
+                    <div className="link-request__heading">
+                      <Smartphone aria-hidden="true" size={20} />
+                      <div>
+                        <strong>“{request.deviceName}” wants to join your library</strong>
+                        <small>
+                          {request.words
+                            ? 'Only approve if the other device shows exactly these six words, in this order.'
+                            : 'This request was opened on another device or before Storybound restarted, so it can’t be approved here. Start linking again on the other device.'}
+                        </small>
+                      </div>
+                    </div>
+                    {request.words ? (
+                      <ol aria-label="Verification words" className="link-request__words">
+                        {request.words.map((word, index) => (
+                          <li key={`${index}-${word}`}>{word}</li>
+                        ))}
+                      </ol>
+                    ) : null}
+                    <div className="button-pair">
+                      {request.words ? (
+                        <Button
+                          disabled={Boolean(busy)}
+                          variant="primary"
+                          onClick={() =>
+                            void runOperation(`sync-link-approve-${request.id}`, async () => {
+                              setSyncStatus(
+                                unwrap(await storyboundApi().sync.approveLinkRequest(request.id))
+                              )
+                              setLinkRequests((current) =>
+                                current.filter((item) => item.id !== request.id)
+                              )
+                              await refreshSync()
+                              return { message: `Approved ${request.deviceName}.` }
+                            })
+                          }
+                        >
+                          The words match, approve
+                        </Button>
+                      ) : null}
+                      <Button
+                        disabled={Boolean(busy)}
+                        variant="quiet"
+                        onClick={() =>
+                          void runOperation(`sync-link-decline-${request.id}`, async () => {
+                            unwrap(await storyboundApi().sync.declineLinkRequest(request.id))
+                            setLinkRequests((current) =>
+                              current.filter((item) => item.id !== request.id)
+                            )
+                            return { message: `Declined ${request.deviceName}.` }
+                          })
+                        }
+                      >
+                        Decline
+                      </Button>
+                    </div>
+                  </div>
+                ))}
                 {syncDevices.map((device) => (
                   <div className="scheduled-backup-plan" key={device.id}>
                     <div>

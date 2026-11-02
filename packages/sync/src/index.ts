@@ -1,2 +1,3 @@
 export * from './canonical'
 export * from './crypto'
+export * from './deviceLink'

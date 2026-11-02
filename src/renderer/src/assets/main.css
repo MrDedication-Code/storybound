@@ -3443,6 +3443,56 @@ kbd {
 .scheduled-backups__create input {
   width: 95px;
 }
+.link-request {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.link-request__heading {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--accent);
+}
+.link-request__heading div {
+  display: grid;
+  gap: 3px;
+}
+.link-request__heading strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.link-request__heading small {
+  color: var(--text-soft);
+  font-size: 11px;
+}
+.link-request__words {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: link-word;
+}
+.link-request__words li {
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 16px;
+  counter-increment: link-word;
+}
+.link-request__words li::before {
+  content: counter(link-word) '. ';
+  color: var(--text-muted);
+  font-size: 11px;
+}
 .scheduled-backup-plan {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto auto;

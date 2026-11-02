@@ -3,6 +3,7 @@ import type {
   SyncCredentialsInput,
   SyncDeviceSummary,
   SyncEnableResult,
+  SyncLinkRequestSummary,
   SyncRecoveryInput,
   SyncResolveConflictInput,
   SyncRunResult,
@@ -898,6 +899,9 @@ export interface StoryboundApi {
     createVault(deviceName?: string): Promise<ApiResult<SyncEnableResult>>
     rotateRecoveryCode(): Promise<ApiResult<SyncEnableResult>>
     recover(input: SyncRecoveryInput): Promise<ApiResult<SyncRuntimeStatus>>
+    listLinkRequests(): Promise<ApiResult<SyncLinkRequestSummary[]>>
+    approveLinkRequest(requestId: string): Promise<ApiResult<SyncRuntimeStatus>>
+    declineLinkRequest(requestId: string): Promise<ApiResult<void>>
     runNow(): Promise<ApiResult<SyncRunResult>>
     listDevices(): Promise<ApiResult<SyncDeviceSummary[]>>
     revokeDevice(deviceId: string): Promise<ApiResult<SyncRuntimeStatus>>
@@ -942,6 +946,7 @@ export {
   type SyncEnableResult,
   type SyncEntityType,
   type SyncKeyEnvelope,
+  type SyncLinkRequestSummary,
   type SyncMutationEnvelope,
   type SyncOperation,
   type SyncPullResult,

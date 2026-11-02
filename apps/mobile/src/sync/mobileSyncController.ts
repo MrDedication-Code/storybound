@@ -1,14 +1,26 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import type { SyncCiphertext, SyncRuntimeStatus, SyncRunResult } from '@storybound/contracts'
+import type {
+  DeviceLinkState,
+  SyncCiphertext,
+  SyncRuntimeStatus,
+  SyncRunResult
+} from '@storybound/contracts'
 import {
   createRecoveryCode,
   createVaultKey,
+  createWrappingKeyPair,
   decryptSyncPayload,
+  deriveDeviceWrappingKey,
+  deviceLinkWords,
   encryptSyncPayload,
   recoveryVerifier,
+  parseDeviceLinkStatus,
+  unwrapVaultKeyFromDevice,
   unwrapVaultKeyFromRecovery,
   wrapVaultKeyForRecovery,
-  type SyncAssociatedData
+  type DeviceLinkStatusRow,
+  type SyncAssociatedData,
+  type SyncWrappingKeyPair
 } from '@storybound/sync'
 import { getRandomBytes, randomUUID } from 'expo-crypto'
 import type {
@@ -42,6 +54,37 @@ import type { MobileSyncController, VaultCredentials } from './types'
 const VAULT_CREDENTIAL_KEY = 'storybound.vault.v1'
 const DEFAULT_DEVICE_NAME = 'Storybound mobile'
 const MAX_SYNC_PAGES = 100
+
+/** A link request this device made, held only in memory until it completes or is abandoned. */
+interface PendingDeviceLink {
+  requestId: string
+  deviceId: string
+  deviceToken: string
+  keyPair: SyncWrappingKeyPair
+  vaultId: string
+  keyEpoch: number
+  expiresAt: string
+  approverPublicKey: string | null
+  confirmed: boolean
+}
+
+function parseLinkRequestResponse(data: unknown): {
+  vaultId: string
+  keyEpoch: number
+  expiresAt: string
+} {
+  const value = (data ?? {}) as Record<string, unknown>
+  if (
+    typeof value.vaultId !== 'string' ||
+    !isUuid(value.vaultId) ||
+    !Number.isSafeInteger(value.keyEpoch) ||
+    (value.keyEpoch as number) < 1 ||
+    typeof value.expiresAt !== 'string'
+  ) {
+    throw new Error('The sync server returned an invalid device-link response.')
+  }
+  return { vaultId: value.vaultId, keyEpoch: value.keyEpoch as number, expiresAt: value.expiresAt }
+}
 
 interface ControllerDependencies {
   client: SupabaseClient | null
@@ -147,6 +190,7 @@ export class StoryboundMobileSyncController implements MobileSyncController {
   private readonly createDeviceToken: () => string
   private lastRuntimeError: string | null = null
   private activeRun: Promise<SyncRunResult> | null = null
+  private pendingLink: PendingDeviceLink | null = null
 
   constructor(
     private readonly store: SQLiteSyncStore,
@@ -300,6 +344,157 @@ export class StoryboundMobileSyncController implements MobileSyncController {
     })
     this.lastRuntimeError = null
     return this.status()
+  }
+
+  /** Asks an unlocked device to approve this one, so no recovery code needs typing. */
+  async startDeviceLink(deviceName?: string): Promise<DeviceLinkState> {
+    const client = this.requireClient()
+    await this.requireSession()
+    await this.cancelDeviceLink()
+    const keyPair = createWrappingKeyPair()
+    const requestId = this.createId()
+    const deviceId = this.createId()
+    const deviceToken = this.createDeviceToken()
+    if (!isCanonicalDeviceToken(deviceToken))
+      throw new Error('The generated device token is invalid.')
+    const { data, error } = await client.rpc('request_storybound_device_link', {
+      p_request_id: requestId,
+      p_device_id: deviceId,
+      p_device_name: validDeviceName(deviceName),
+      p_device_token: deviceToken,
+      p_public_key: bytesToBase64(keyPair.publicKey)
+    })
+    if (error) throw new Error(error.message)
+    const response = parseLinkRequestResponse(data)
+    this.pendingLink = {
+      requestId,
+      deviceId,
+      deviceToken,
+      keyPair,
+      vaultId: response.vaultId,
+      keyEpoch: response.keyEpoch,
+      expiresAt: response.expiresAt,
+      approverPublicKey: null,
+      confirmed: false
+    }
+    return this.linkState(this.pendingLink)
+  }
+
+  /** Polls the request; completes the link once approved and the words were confirmed here. */
+  async checkDeviceLink(): Promise<DeviceLinkState | null> {
+    const link = this.pendingLink
+    if (!link) return null
+    const { data, error } = await this.requireClient().rpc('get_storybound_device_link', {
+      p_request_id: link.requestId,
+      p_device_token: link.deviceToken
+    })
+    if (error) throw new Error(error.message)
+    const row = parseDeviceLinkStatus(data)
+    if (
+      row.requestId !== link.requestId ||
+      row.vaultId !== link.vaultId ||
+      row.deviceId !== link.deviceId
+    ) {
+      throw new Error('The sync server returned a mismatched device-link response.')
+    }
+    if (row.status === 'expired' || row.status === 'declined' || row.status === 'cancelled') {
+      this.pendingLink = null
+      return { phase: row.status, words: null, confirmed: false, expiresAt: null }
+    }
+    if (row.approverPublicKey) {
+      // The words were derived from the first approver key seen; a different one later means
+      // something changed in transit, so the attempt is abandoned rather than trusted.
+      if (link.approverPublicKey && link.approverPublicKey !== row.approverPublicKey) {
+        await this.cancelDeviceLink()
+        throw new Error('The approving device changed during linking. Start again.')
+      }
+      link.approverPublicKey = row.approverPublicKey
+    }
+    if (row.status === 'approved' && link.confirmed) return this.completeDeviceLink(link, row)
+    return this.linkState(link)
+  }
+
+  /** Records that the user saw the same words on both devices. */
+  async confirmDeviceLinkWords(): Promise<DeviceLinkState | null> {
+    if (!this.pendingLink?.approverPublicKey) {
+      throw new Error('Wait until your other device shows the words.')
+    }
+    this.pendingLink.confirmed = true
+    return this.checkDeviceLink()
+  }
+
+  async cancelDeviceLink(): Promise<void> {
+    const link = this.pendingLink
+    this.pendingLink = null
+    if (!link || !this.client) return
+    // Best effort: an abandoned request also expires on its own after ten minutes.
+    await this.client
+      .rpc('cancel_storybound_device_link', {
+        p_request_id: link.requestId,
+        p_device_token: link.deviceToken
+      })
+      .then(
+        () => undefined,
+        () => undefined
+      )
+  }
+
+  private linkState(link: PendingDeviceLink): DeviceLinkState {
+    return {
+      phase: link.approverPublicKey ? 'compare' : 'waiting',
+      words: link.approverPublicKey
+        ? deviceLinkWords({
+            vaultId: link.vaultId,
+            requestId: link.requestId,
+            requesterPublicKey: bytesToBase64(link.keyPair.publicKey),
+            approverPublicKey: link.approverPublicKey
+          })
+        : null,
+      confirmed: link.confirmed,
+      expiresAt: link.expiresAt
+    }
+  }
+
+  private async completeDeviceLink(
+    link: PendingDeviceLink,
+    row: DeviceLinkStatusRow
+  ): Promise<DeviceLinkState> {
+    const envelope = row.envelope!
+    if (
+      !link.approverPublicKey ||
+      row.approverPublicKey !== link.approverPublicKey ||
+      envelope.vaultId !== link.vaultId ||
+      envelope.keyEpoch !== link.keyEpoch ||
+      envelope.recipientPublicKey !== bytesToBase64(link.keyPair.publicKey)
+    ) {
+      await this.cancelDeviceLink()
+      throw new Error('The approval did not match this request. Start linking again.')
+    }
+    let vaultKey: Uint8Array
+    try {
+      vaultKey = unwrapVaultKeyFromDevice(
+        envelope,
+        deriveDeviceWrappingKey(
+          link.keyPair.privateKey,
+          base64ToBytes(link.approverPublicKey),
+          link.vaultId
+        )
+      )
+    } catch {
+      await this.cancelDeviceLink()
+      throw new Error('The approval could not be opened on this device. Start linking again.')
+    }
+    const session = await this.requireSession()
+    await this.saveAndActivate(session.user.id, {
+      vaultId: link.vaultId,
+      deviceId: link.deviceId,
+      deviceToken: link.deviceToken,
+      keyEpoch: link.keyEpoch,
+      vaultKey
+    })
+    this.pendingLink = null
+    this.lastRuntimeError = null
+    return { phase: 'linked', words: null, confirmed: true, expiresAt: null }
   }
 
   syncNow(): Promise<SyncRunResult> {

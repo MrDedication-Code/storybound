@@ -375,6 +375,13 @@ export function registerStoryboundIpc({
     z.object({ recoveryCode: syncRecoveryCodeSchema, deviceName: optionalDeviceName }),
     (input) => sync.recoverVault(input.recoveryCode, input.deviceName)
   )
+  handle(IPC_CHANNELS.syncListLinkRequests, noInput, () => sync.listLinkRequests())
+  handle(IPC_CHANNELS.syncApproveLinkRequest, idSchema, (requestId) =>
+    sync.approveLinkRequest(requestId)
+  )
+  handle(IPC_CHANNELS.syncDeclineLinkRequest, idSchema, (requestId) =>
+    sync.declineLinkRequest(requestId)
+  )
   handle(IPC_CHANNELS.syncRunNow, noInput, () => sync.syncNow())
   handle(IPC_CHANNELS.syncListDevices, noInput, () => sync.listDevices())
   handle(IPC_CHANNELS.syncRevokeDevice, idSchema, (deviceId) => sync.revokeDevice(deviceId))

@@ -160,3 +160,25 @@ export interface SyncResolveConflictInput {
   id: string
   resolution: Extract<SyncConflictResolution, 'keep-local' | 'use-remote'>
 }
+
+/** A request from a new device to join the vault, as shown on an unlocked device. */
+export interface SyncLinkRequestSummary {
+  id: string
+  deviceName: string
+  createdAt: string
+  expiresAt: string
+  /** The six verification words, or null when this device cannot approve the request. */
+  words: string[] | null
+}
+
+export type DeviceLinkPhase =
+  'waiting' | 'compare' | 'linked' | 'expired' | 'declined' | 'cancelled'
+
+/** The new device's view of its link request. */
+export interface DeviceLinkState {
+  phase: DeviceLinkPhase
+  words: string[] | null
+  /** The user confirmed on this device that the words match the approving device. */
+  confirmed: boolean
+  expiresAt: string | null
+}

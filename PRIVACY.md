@@ -25,6 +25,8 @@ An unconfigured build makes no sync requests. After the user signs in and explic
 
 Supabase necessarily processes the account email, authentication/session data, vault and device identifiers, entity type and opaque entity ID, revision/timing information, payload sizes, and ciphertext. It does not receive the vault key or recovery code and cannot decrypt payload contents. Session tokens, the local vault key, and a random per-device possession token are stored using the operating system's protected credential facility on desktop and SecureStore on mobile; Supabase stores only the possession token's SHA-256 hash.
 
+A new device can join either with the recovery code or by approval from a device that is already unlocked. When linking by approval, the new device and the approving device each publish a one-time public key; both screens show six words derived from the vault, the request, and both keys, and the user confirms on both devices that they match. The approving device then seals the vault key for the new device's key, so Supabase relays only public keys and a sealed envelope. Link requests expire after ten minutes, at most three can be pending, and a device must hold its possession token to list or approve them.
+
 The recovery code is shown when the first vault is created. Losing every unlocked device and that code makes the synced ciphertext unrecoverable. Revoking a device stops later RPC access but cannot erase data that device already downloaded. Signing out or disabling sync does not delete local books.
 
 ## Optional OpenAI writing assistant

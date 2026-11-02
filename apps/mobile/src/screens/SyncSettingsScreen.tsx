@@ -1,4 +1,4 @@
-import type { SyncRuntimeStatus } from '@storybound/contracts'
+import type { DeviceLinkState, SyncRuntimeStatus } from '@storybound/contracts'
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { AppHeader } from '../components/AppHeader'
@@ -25,6 +25,7 @@ export function SyncSettingsScreen({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [link, setLink] = useState<DeviceLinkState | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     setStatus(await controller.status())
@@ -44,6 +45,50 @@ export function SyncSettingsScreen({
       active = false
     }
   }, [controller])
+
+  const linkPhase = link?.phase
+  useEffect(() => {
+    let active = true
+    // Resume a link started before this screen was last open.
+    void controller
+      .checkDeviceLink()
+      .then((state) => {
+        if (active && state) setLink(state)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [controller])
+
+  useEffect(() => {
+    if (linkPhase !== 'waiting' && linkPhase !== 'compare') return
+    let active = true
+    const timer = setInterval(() => {
+      void controller
+        .checkDeviceLink()
+        .then(async (state) => {
+          if (!active) return
+          setLink(state)
+          if (state?.phase === 'linked') {
+            setNotice('This device is linked. Downloading your library…')
+            await refresh()
+            const result = await controller.syncNow()
+            if (active) setNotice(`Linked and synced: ${result.pulled} items downloaded.`)
+            await refresh()
+          }
+        })
+        .catch((caught: unknown) => {
+          if (!active) return
+          setLink(null)
+          setError(messageFrom(caught, 'Linking could not be completed.'))
+        })
+    }, LINK_POLL_MILLISECONDS)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [controller, linkPhase, refresh])
 
   const perform = async (action: () => Promise<void>): Promise<void> => {
     if (busy) return
@@ -78,8 +123,8 @@ export function SyncSettingsScreen({
       >
         <Text style={styles.title}>Encrypted device sync</Text>
         <Text style={styles.intro}>
-          Your library is encrypted on this device before it is uploaded. The recovery code is the
-          only way to unlock an existing vault on another device.
+          Your library is encrypted on this device before it is uploaded. Link this phone by
+          approving it from your Mac, or unlock it with your recovery code.
         </Text>
 
         <StatusCard status={status} />
@@ -140,12 +185,38 @@ export function SyncSettingsScreen({
           </View>
         ) : !unlocked ? (
           <View style={styles.section}>
-            <Text style={compactCaps}>Unlock this device</Text>
-            <Text style={styles.sectionCopy}>
-              Create a new encrypted vault for a new account, or enter the recovery code from an
-              existing Storybound device.
-            </Text>
+            <Text style={compactCaps}>Link to your Mac</Text>
+            <LinkPanel
+              busy={busy}
+              link={link}
+              onCancel={() =>
+                void perform(async () => {
+                  await controller.cancelDeviceLink()
+                  setLink(null)
+                })
+              }
+              onConfirm={() =>
+                void perform(async () => {
+                  const state = await controller.confirmDeviceLinkWords()
+                  setLink(state)
+                  if (state?.phase === 'linked') {
+                    const result = await controller.syncNow()
+                    setNotice(`Linked and synced: ${result.pulled} items downloaded.`)
+                  }
+                })
+              }
+              onStart={() =>
+                void perform(async () => {
+                  setLink(await controller.startDeviceLink(deviceName))
+                })
+              }
+            />
             <Field label="Device name" value={deviceName} onChangeText={setDeviceName} />
+            <Text style={[compactCaps, styles.alternativeHeading]}>Or use your recovery code</Text>
+            <Text style={styles.sectionCopy}>
+              Enter the recovery code from your first Storybound device, or create a new encrypted
+              vault if this account has none yet.
+            </Text>
             <Field
               autoCapitalize="characters"
               label="Recovery code"
@@ -232,10 +303,12 @@ export function SyncSettingsScreen({
         ) : null}
 
         <View style={styles.privacyCard}>
-          <Text style={styles.noticeTitle}>Recovery is intentionally manual</Text>
+          <Text style={styles.noticeTitle}>Your key never reaches the server readable</Text>
           <Text style={styles.noticeCopy}>
-            The server stores an encrypted vault-key envelope, not your readable key or stories.
-            Signing out never removes the local library.
+            When you link by approval, your Mac seals the library key so only this phone can open
+            it, and the six words prove nothing swapped in between. The server stores only sealed
+            envelopes, never your readable key or stories. Signing out never removes the local
+            library.
           </Text>
         </View>
         <PrimaryButton label="Return to library" onPress={onHome} />
@@ -276,6 +349,91 @@ function Field({
         value={value}
         onChangeText={onChangeText}
       />
+    </View>
+  )
+}
+
+const LINK_POLL_MILLISECONDS = 2_000
+
+function LinkPanel({
+  link,
+  busy,
+  onStart,
+  onConfirm,
+  onCancel
+}: {
+  link: DeviceLinkState | null
+  busy: boolean
+  onStart: () => void
+  onConfirm: () => void
+  onCancel: () => void
+}): React.JSX.Element {
+  if (link?.phase === 'waiting') {
+    return (
+      <View style={styles.linkCard}>
+        <Text style={styles.linkTitle}>Waiting for your Mac…</Text>
+        <Text style={styles.sectionCopy}>
+          On your Mac, open Storybound, then Settings → Sync & devices. A request from this phone
+          will appear there with six words.
+        </Text>
+        <ActivityIndicator color={storyboundColors.brass} style={styles.spinner} />
+        <PrimaryButton disabled={busy} label="Cancel" variant="quiet" onPress={onCancel} />
+      </View>
+    )
+  }
+  if (link?.phase === 'compare' && link.words) {
+    return (
+      <View style={styles.linkCard}>
+        <Text style={styles.linkTitle}>
+          {link.confirmed ? 'Now approve on your Mac' : 'Do these words match your Mac?'}
+        </Text>
+        <View accessibilityLabel={`Words: ${link.words.join(', ')}`} style={styles.wordGrid}>
+          {link.words.map((word, index) => (
+            <Text key={`${index}-${word}`} style={styles.word}>
+              <Text style={styles.wordNumber}>{index + 1}. </Text>
+              {word}
+            </Text>
+          ))}
+        </View>
+        {link.confirmed ? (
+          <>
+            <Text style={styles.sectionCopy}>
+              On your Mac, click “The words match, approve”. This phone will finish by itself.
+            </Text>
+            <ActivityIndicator color={storyboundColors.brass} style={styles.spinner} />
+            <PrimaryButton disabled={busy} label="Cancel" variant="quiet" onPress={onCancel} />
+          </>
+        ) : (
+          <>
+            <Text style={styles.sectionCopy}>
+              Check that your Mac shows exactly these six words, in this order.
+            </Text>
+            <PrimaryButton disabled={busy} label="They match" onPress={onConfirm} />
+            <PrimaryButton
+              disabled={busy}
+              label="They don’t match"
+              style={styles.secondaryAction}
+              variant="quiet"
+              onPress={onCancel}
+            />
+          </>
+        )}
+      </View>
+    )
+  }
+  const ended =
+    link?.phase === 'expired'
+      ? 'That request expired. Start again when your Mac is ready.'
+      : link?.phase === 'declined'
+        ? 'Your Mac declined that request.'
+        : null
+  return (
+    <View style={styles.linkCard}>
+      <Text style={styles.sectionCopy}>
+        The easy way: approve this phone from Storybound on your Mac. No code to type.
+      </Text>
+      {ended ? <Text style={styles.errorMessage}>{ended}</Text> : null}
+      <PrimaryButton disabled={busy} label="Link to my Mac" onPress={onStart} />
     </View>
   )
 }
@@ -442,6 +600,42 @@ const styles = StyleSheet.create({
     minHeight: 84,
     paddingTop: 13,
     textAlignVertical: 'top'
+  },
+  alternativeHeading: {
+    marginTop: 24
+  },
+  linkCard: {
+    gap: 10,
+    marginBottom: 18,
+    padding: 16,
+    borderColor: storyboundColors.brass,
+    borderRadius: storyboundRadii.medium,
+    borderWidth: 1,
+    backgroundColor: storyboundColors.paperRaised
+  },
+  linkTitle: {
+    ...literaryHeading,
+    fontSize: 20
+  },
+  wordGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  word: {
+    width: '47%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderColor: storyboundColors.line,
+    borderRadius: storyboundRadii.medium - 6,
+    borderWidth: 1,
+    color: storyboundColors.text,
+    fontSize: 18,
+    fontWeight: '600'
+  },
+  wordNumber: {
+    color: storyboundColors.muted,
+    fontSize: 12
   },
   secondaryAction: {
     marginTop: 10

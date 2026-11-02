@@ -2,7 +2,11 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import {
   createRecoveryCode,
   createVaultKey,
+  createWrappingKeyPair,
+  deriveDeviceWrappingKey,
+  deviceLinkWords,
   recoveryVerifier,
+  wrapVaultKeyForDevice,
   wrapVaultKeyForRecovery
 } from '@storybound/sync'
 import { describe, expect, it, vi } from 'vitest'
@@ -11,7 +15,7 @@ import {
   StoryboundMobileSyncController,
   parseVaultCredentials
 } from '../src/sync/mobileSyncController'
-import { bytesToBase64, bytesToBase64Url } from '../src/sync/encoding'
+import { base64ToBytes, bytesToBase64, bytesToBase64Url } from '../src/sync/encoding'
 import { ChunkedSecureStorage, type SecureStoreBackend } from '../src/sync/secureStore'
 
 vi.mock('expo-crypto', () => ({
@@ -332,5 +336,181 @@ describe('mobile sync controller live RPC contract', () => {
     await controller.signOut()
 
     expect(signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+})
+
+describe('linking a device by approval instead of a recovery code', () => {
+  const requestId = '55555555-5555-4555-8555-555555555555'
+  const linkedDeviceId = '66666666-6666-4666-8666-666666666666'
+
+  interface LinkHarness {
+    controller: StoryboundMobileSyncController
+    server: {
+      status: string
+      requesterPublicKey: string
+      approverPublicKey: string | null
+      envelope: Record<string, unknown> | null
+      cancelled: number
+    }
+    storage: ChunkedSecureStorage
+    local: ReturnType<typeof fakeStore>
+    vaultKey: Uint8Array
+    acknowledge: (publicKey?: Uint8Array) => void
+    approve: (sealFor?: string, sender?: ReturnType<typeof createWrappingKeyPair>) => void
+    macWords: () => string[]
+  }
+
+  /** An in-memory stand-in for the link RPCs plus a simulated Mac acting as the approver. */
+  function linkHarness(): LinkHarness {
+    const vaultKey = createVaultKey()
+    const server = {
+      status: 'pending' as string,
+      requesterPublicKey: '',
+      approverPublicKey: null as string | null,
+      envelope: null as Record<string, unknown> | null,
+      cancelled: 0
+    }
+    const ids = [requestId, linkedDeviceId]
+    const client = {
+      auth: {
+        getSession: vi.fn(async () => ({ data: { session: fakeSession() }, error: null }))
+      },
+      rpc: vi.fn(async (name: string, parameters?: Record<string, unknown>) => {
+        if (name === 'request_storybound_device_link') {
+          server.requesterPublicKey = parameters!.p_public_key as string
+          return {
+            data: { requestId, vaultId, keyEpoch: 1, expiresAt: '2026-08-06T13:10:00Z' },
+            error: null
+          }
+        }
+        if (name === 'get_storybound_device_link') {
+          return {
+            data: {
+              requestId,
+              vaultId,
+              deviceId: linkedDeviceId,
+              status: server.status,
+              approverPublicKey: server.approverPublicKey,
+              keyEpoch: server.envelope ? 1 : null,
+              envelope: server.envelope,
+              expiresAt: '2026-08-06T13:10:00Z'
+            },
+            error: null
+          }
+        }
+        if (name === 'cancel_storybound_device_link') {
+          server.cancelled += 1
+          server.status = 'cancelled'
+          return { data: null, error: null }
+        }
+        throw new Error(`Unexpected RPC: ${name}`)
+      })
+    } as unknown as SupabaseClient
+    const storage = new ChunkedSecureStorage('link-test', new MemorySecureStore())
+    const local = fakeStore()
+    const controller = new StoryboundMobileSyncController(local.store, {
+      client,
+      credentialStorage: storage,
+      createId: () => ids.shift()!,
+      createDeviceToken: () => deviceToken,
+      now: () => new Date('2026-08-06T13:00:00Z')
+    })
+    const mac = createWrappingKeyPair()
+    const acknowledge = (publicKey = mac.publicKey): void => {
+      server.approverPublicKey = bytesToBase64(publicKey)
+    }
+    const approve = (sealFor = server.requesterPublicKey, sender = mac): void => {
+      const recipient = base64ToBytes(sealFor)
+      server.envelope = wrapVaultKeyForDevice(
+        vaultKey,
+        deriveDeviceWrappingKey(sender.privateKey, recipient, vaultId),
+        vaultId,
+        1,
+        recipient
+      ) as unknown as Record<string, unknown>
+      server.status = 'approved'
+    }
+    const macWords = (): string[] =>
+      deviceLinkWords({
+        vaultId,
+        requestId,
+        requesterPublicKey: server.requesterPublicKey,
+        approverPublicKey: server.approverPublicKey!
+      })
+    return { controller, server, storage, local, vaultKey, acknowledge, approve, macWords }
+  }
+
+  it('shows the same words as the Mac and saves the vault key only after both sides agree', async () => {
+    const harness = linkHarness()
+    const { controller } = harness
+
+    await expect(controller.startDeviceLink('Jack’s phone')).resolves.toMatchObject({
+      phase: 'waiting',
+      words: null
+    })
+    await expect(controller.checkDeviceLink()).resolves.toMatchObject({ phase: 'waiting' })
+
+    harness.acknowledge()
+    const comparing = await controller.checkDeviceLink()
+    expect(comparing).toMatchObject({ phase: 'compare', confirmed: false })
+    expect(comparing!.words).toEqual(harness.macWords())
+    expect(comparing!.words).toHaveLength(6)
+
+    // The Mac approves first; the phone still waits for its own confirmation.
+    harness.approve()
+    await expect(controller.checkDeviceLink()).resolves.toMatchObject({ phase: 'compare' })
+    expect(await harness.storage.getItem(`storybound.vault.v1.${userId}`)).toBeNull()
+
+    await expect(controller.confirmDeviceLinkWords()).resolves.toMatchObject({ phase: 'linked' })
+    const credentials = parseVaultCredentials(
+      (await harness.storage.getItem(`storybound.vault.v1.${userId}`)) ?? ''
+    )
+    expect(credentials).toMatchObject({ vaultId, deviceId: linkedDeviceId, keyEpoch: 1 })
+    expect(base64ToBytes(credentials!.vaultKey)).toEqual(harness.vaultKey)
+    expect(harness.local.store.activateProfile).toHaveBeenCalledWith(vaultId, linkedDeviceId)
+    await expect(controller.checkDeviceLink()).resolves.toBeNull()
+  })
+
+  it('abandons the link if the approver key changes after the words were shown', async () => {
+    const harness = linkHarness()
+    await harness.controller.startDeviceLink()
+    harness.acknowledge()
+    await harness.controller.checkDeviceLink()
+
+    harness.acknowledge(createWrappingKeyPair().publicKey)
+    await expect(harness.controller.checkDeviceLink()).rejects.toThrow(/changed during linking/)
+    expect(harness.server.cancelled).toBe(1)
+    await expect(harness.controller.checkDeviceLink()).resolves.toBeNull()
+  })
+
+  it('refuses a key sealed by a device other than the one whose words were confirmed', async () => {
+    const harness = linkHarness()
+    await harness.controller.startDeviceLink()
+    harness.acknowledge()
+    await harness.controller.checkDeviceLink()
+    await harness.controller.confirmDeviceLinkWords()
+
+    harness.approve(harness.server.requesterPublicKey, createWrappingKeyPair())
+    await expect(harness.controller.checkDeviceLink()).rejects.toThrow(/could not be opened/)
+    expect(await harness.storage.getItem(`storybound.vault.v1.${userId}`)).toBeNull()
+  })
+
+  it('refuses an envelope addressed to a different device', async () => {
+    const harness = linkHarness()
+    await harness.controller.startDeviceLink()
+    harness.acknowledge()
+    await harness.controller.checkDeviceLink()
+    await harness.controller.confirmDeviceLinkWords()
+
+    harness.approve(bytesToBase64(createWrappingKeyPair().publicKey))
+    await expect(harness.controller.checkDeviceLink()).rejects.toThrow(/did not match/)
+  })
+
+  it('reports a declined or expired request and forgets it', async () => {
+    const harness = linkHarness()
+    await harness.controller.startDeviceLink()
+    harness.server.status = 'expired'
+    await expect(harness.controller.checkDeviceLink()).resolves.toMatchObject({ phase: 'expired' })
+    await expect(harness.controller.checkDeviceLink()).resolves.toBeNull()
   })
 })

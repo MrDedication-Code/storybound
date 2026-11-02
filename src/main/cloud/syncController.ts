@@ -5,15 +5,22 @@ import { join } from 'node:path'
 import {
   createRecoveryCode,
   createVaultKey,
+  createWrappingKeyPair,
+  deriveDeviceWrappingKey,
+  deviceLinkWords,
+  parseDeviceLinkRequests,
   recoveryVerifier,
   unwrapVaultKeyFromRecovery,
-  wrapVaultKeyForRecovery
+  wrapVaultKeyForDevice,
+  wrapVaultKeyForRecovery,
+  type SyncWrappingKeyPair
 } from '@storybound/sync'
 import type {
   SyncConflictRecord,
   SyncDeviceSummary,
   SyncEnableResult,
   SyncKeyEnvelope,
+  SyncLinkRequestSummary,
   SyncRuntimeStatus
 } from '@storybound/contracts'
 import type { SyncCredentialsInput } from '../../shared/types'
@@ -62,6 +69,12 @@ export interface SyncControllerDependencies {
 
 export class StoryboundSyncController {
   private engine: DesktopSyncEngine | null = null
+  // Ephemeral keys for link requests this device has acknowledged. They live only in memory:
+  // a request acknowledged before a restart can no longer be approved here and must be redone.
+  private readonly linkKeys = new Map<
+    string,
+    { keyPair: SyncWrappingKeyPair; requesterPublicKey: string }
+  >()
   private lastRuntimeError: string | null = null
   private readonly config: StoryboundCloudConfig | null
   private readonly client: SupabaseClient | null
@@ -250,6 +263,120 @@ export class StoryboundSyncController {
     })
     if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
     return { status: await this.status(), recoveryCode }
+  }
+
+  /** Pending requests from new devices, acknowledging each so both screens can show words. */
+  async listLinkRequests(): Promise<SyncLinkRequestSummary[]> {
+    const credentials = await this.readVaultCredentials(await this.requireUserId())
+    if (!credentials) return []
+    const client = this.requireClient()
+    const { data, error } = await client.rpc('list_storybound_link_requests', {
+      p_device_id: credentials.deviceId,
+      p_device_token: credentials.deviceToken
+    })
+    if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
+    const rows = parseDeviceLinkRequests(data)
+    for (const requestId of this.linkKeys.keys()) {
+      if (!rows.some((row) => row.requestId === requestId)) this.linkKeys.delete(requestId)
+    }
+
+    const summaries: SyncLinkRequestSummary[] = []
+    for (const row of rows) {
+      let held = this.linkKeys.get(row.requestId)
+      if (!row.approverPublicKey && !held) {
+        const candidate = {
+          keyPair: createWrappingKeyPair(),
+          requesterPublicKey: row.requesterPublicKey
+        }
+        const acknowledged = await client.rpc('acknowledge_storybound_device_link', {
+          p_device_id: credentials.deviceId,
+          p_device_token: credentials.deviceToken,
+          p_request_id: row.requestId,
+          p_public_key: Buffer.from(candidate.keyPair.publicKey).toString('base64')
+        })
+        // Another device may have acknowledged it first; the request then stays unapprovable here.
+        if (!acknowledged.error) {
+          held = candidate
+          this.linkKeys.set(row.requestId, held)
+        }
+      }
+      const approverPublicKey = held ? Buffer.from(held.keyPair.publicKey).toString('base64') : null
+      // Words are shown only when this device holds the key the request was acknowledged with
+      // and the requester key is unchanged; otherwise the request cannot be approved from here.
+      const approvable =
+        held !== undefined &&
+        held.requesterPublicKey === row.requesterPublicKey &&
+        (row.approverPublicKey === null || row.approverPublicKey === approverPublicKey) &&
+        (row.approverDeviceId === null || row.approverDeviceId === credentials.deviceId)
+      summaries.push({
+        id: row.requestId,
+        deviceName: row.deviceName,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        words: approvable
+          ? deviceLinkWords({
+              vaultId: credentials.vaultId,
+              requestId: row.requestId,
+              requesterPublicKey: row.requesterPublicKey,
+              approverPublicKey: approverPublicKey!
+            })
+          : null
+      })
+    }
+    return summaries
+  }
+
+  /** Seals the vault key for the requesting device, which registers it. */
+  async approveLinkRequest(requestId: string): Promise<SyncRuntimeStatus> {
+    const credentials = await this.readVaultCredentials(await this.requireUserId())
+    if (!credentials) {
+      throw new StoryboundError('SECURITY_ERROR', 'Unlock sync with the recovery code first.')
+    }
+    const held = this.linkKeys.get(requestId)
+    if (!held) {
+      throw new StoryboundError(
+        'CONFLICT',
+        'This request can no longer be approved here. Start linking again on the other device.'
+      )
+    }
+    const requesterPublicKey = new Uint8Array(Buffer.from(held.requesterPublicKey, 'base64'))
+    const wrappingKey = deriveDeviceWrappingKey(
+      held.keyPair.privateKey,
+      requesterPublicKey,
+      credentials.vaultId
+    )
+    const envelope = wrapVaultKeyForDevice(
+      Buffer.from(credentials.vaultKey, 'base64'),
+      wrappingKey,
+      credentials.vaultId,
+      credentials.keyEpoch,
+      requesterPublicKey
+    )
+    const { error } = await this.requireClient().rpc('approve_storybound_device_link', {
+      p_device_id: credentials.deviceId,
+      p_device_token: credentials.deviceToken,
+      p_request_id: requestId,
+      p_key_epoch: credentials.keyEpoch,
+      p_envelope_nonce: envelope.nonce,
+      p_envelope_ciphertext: envelope.ciphertext
+    })
+    if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
+    this.linkKeys.delete(requestId)
+    return this.status()
+  }
+
+  async declineLinkRequest(requestId: string): Promise<void> {
+    const credentials = await this.readVaultCredentials(await this.requireUserId())
+    if (!credentials) {
+      throw new StoryboundError('SECURITY_ERROR', 'Unlock sync with the recovery code first.')
+    }
+    const { error } = await this.requireClient().rpc('decline_storybound_device_link', {
+      p_device_id: credentials.deviceId,
+      p_device_token: credentials.deviceToken,
+      p_request_id: requestId
+    })
+    if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
+    this.linkKeys.delete(requestId)
   }
 
   async recoverVault(recoveryCode: string, deviceName = hostname()): Promise<SyncRuntimeStatus> {
