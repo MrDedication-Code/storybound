@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./annotationAnchors": "./src/annotationAnchors.ts",
     "./canonical": "./src/canonical.ts",
     "./crypto": "./src/crypto.ts",
     "./deviceLink": "./src/deviceLink.ts"

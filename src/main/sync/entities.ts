@@ -11,7 +11,8 @@ export const DESKTOP_SYNC_ENTITY_TYPES = [
   'book',
   'chapter',
   'reading-state',
-  'media-asset'
+  'media-asset',
+  'annotation'
 ] as const satisfies readonly SyncEntityType[]
 
 export function isDesktopSyncEntityType(value: string): value is DesktopSyncEntityType {
@@ -125,6 +126,15 @@ const READING_COLUMNS = [
   'device_id'
 ] as const
 
+/**
+ * A highlight or note travels as one record with its anchor (where it sits in the chapter)
+ * folded in. Its version is the annotation's plus the anchor's, so moving the anchor (chapter
+ * split or merge) also syncs; receivers store the anchor at version 1 to keep the sum.
+ */
+const ANNOTATION_KINDS = new Set(['highlight', 'note'])
+const ANCHOR_STATUSES = new Set(['resolved', 'approximate', 'unresolved'])
+const MAX_ANNOTATION_TEXT = 100_000
+
 function selectColumns(columns: readonly string[], prefix?: string): string {
   return columns.map((column) => (prefix ? `${prefix}.${column}` : column)).join(', ')
 }
@@ -189,7 +199,7 @@ function upsert(
 }
 
 /**
- * Every library, book, chapter, and reading position on this device. The vault holds the whole
+ * Every library, book, chapter, reading position, cover, and annotation on this device. The vault holds the whole
  * library collection; `scopeLibraryId` is only the profile's bookkeeping key for outbox and
  * entity-state rows, not a filter. Each book carries `library_id` so receivers file it correctly.
  */
@@ -222,6 +232,20 @@ export function listLocalSyncEntities(
     )
     .all() as Array<Record<string, unknown>>
 
+  const annotations = database
+    .prepare(
+      `SELECT a.id, a.book_id, anchor.chapter_id, a.anchor_id, a.kind, a.body, a.color,
+         a.created_at, MAX(a.updated_at, anchor.updated_at) AS updated_at,
+         COALESCE(a.deleted_at, anchor.deleted_at) AS deleted_at,
+         anchor.start_offset, anchor.end_offset, anchor.fallback_location, anchor.quote,
+         anchor.prefix, anchor.suffix, anchor.content_hash, anchor.resolution_status,
+         a.row_version + anchor.row_version AS row_version
+       FROM annotations a
+       JOIN chapter_anchors anchor ON anchor.id = a.anchor_id
+       JOIN book_libraries bl ON bl.book_id = a.book_id`
+    )
+    .all() as Array<Record<string, unknown>>
+
   const covers = database
     .prepare(
       `SELECT id, cover_image_path, cover_version, updated_at FROM books WHERE cover_version > 0`
@@ -238,6 +262,7 @@ export function listLocalSyncEntities(
     ...books.map((value) => localEntity(scopeLibraryId, 'book', 'id', value)),
     ...chapters.map((value) => localEntity(scopeLibraryId, 'chapter', 'id', value)),
     ...reading.map((value) => localEntity(scopeLibraryId, 'reading-state', 'book_id', value)),
+    ...annotations.map((value) => localEntity(scopeLibraryId, 'annotation', 'id', value)),
     ...covers.map((cover): LocalSyncEntity => ({
       libraryId: scopeLibraryId,
       entityType: 'media-asset',
@@ -307,6 +332,150 @@ function applyCover(
   return rowVersion
 }
 
+function optionalText(row: Record<string, unknown>, key: string, maximum: number): string {
+  const value = row[key] ?? ''
+  if (typeof value !== 'string' || value.length > maximum) {
+    throw new StoryboundError('VALIDATION_ERROR', `The synced ${key} is invalid.`)
+  }
+  return value
+}
+
+function optionalOffset(row: Record<string, unknown>, key: string): number | null {
+  const value = row[key]
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new StoryboundError('VALIDATION_ERROR', `The synced ${key} is invalid.`)
+  }
+  return value
+}
+
+function applyAnnotation(
+  database: Database.Database,
+  annotationId: string,
+  operation: 'upsert' | 'delete',
+  value: Record<string, unknown>
+): number {
+  const existing = database
+    .prepare('SELECT anchor_id FROM annotations WHERE id = ?')
+    .get(annotationId) as { anchor_id: string } | undefined
+
+  if (operation === 'delete') {
+    const rowVersion = typeof value.rowVersion === 'number' ? value.rowVersion : 2
+    const deletedAt =
+      typeof value.deletedAt === 'string' ? value.deletedAt : new Date().toISOString()
+    const annotationVersion = Math.max(1, rowVersion - 1)
+    if (!existing) return annotationVersion + 1
+    database
+      .prepare(
+        `UPDATE chapter_anchors SET deleted_at = COALESCE(deleted_at, ?), row_version = 1
+         WHERE id = ?`
+      )
+      .run(deletedAt, existing.anchor_id)
+    database
+      .prepare(
+        `UPDATE annotations SET deleted_at = COALESCE(deleted_at, ?), row_version = ?
+         WHERE id = ?`
+      )
+      .run(deletedAt, annotationVersion, annotationId)
+    return annotationVersion + 1
+  }
+
+  if (requireString(value, 'id') !== annotationId) {
+    throw new StoryboundError('VALIDATION_ERROR', 'The synced record identifier does not match.')
+  }
+  const rowVersion = requirePositiveVersion(value)
+  const bookId = requireString(value, 'book_id')
+  const chapterId = requireString(value, 'chapter_id')
+  const kind = requireString(value, 'kind')
+  const color = requireString(value, 'color')
+  const createdAt = requireString(value, 'created_at')
+  const updatedAt = requireString(value, 'updated_at')
+  const deletedAt = typeof value.deleted_at === 'string' ? value.deleted_at : null
+  const startOffset = optionalOffset(value, 'start_offset')
+  const endOffset = optionalOffset(value, 'end_offset')
+  const fallback = value.fallback_location
+  const status =
+    typeof value.resolution_status === 'string' && ANCHOR_STATUSES.has(value.resolution_status)
+      ? value.resolution_status
+      : 'approximate'
+  if (
+    rowVersion < 2 ||
+    !ANNOTATION_KINDS.has(kind) ||
+    color.length > 40 ||
+    (startOffset === null) !== (endOffset === null) ||
+    (startOffset !== null && endOffset !== null && startOffset > endOffset) ||
+    typeof fallback !== 'number' ||
+    !(fallback >= 0 && fallback <= 1)
+  ) {
+    throw new StoryboundError('VALIDATION_ERROR', 'The synced annotation is invalid.')
+  }
+  const body = optionalText(value, 'body', MAX_ANNOTATION_TEXT)
+  const quote = optionalText(value, 'quote', MAX_ANNOTATION_TEXT)
+  const prefix = optionalText(value, 'prefix', 2_000)
+  const suffix = optionalText(value, 'suffix', 2_000)
+  const contentHash = optionalText(value, 'content_hash', 128)
+
+  // The chapter normally arrives first. Without it the anchor has nowhere to live, so the
+  // annotation is left out rather than failing the whole download.
+  const chapter = database.prepare('SELECT book_id FROM chapters WHERE id = ?').get(chapterId) as
+    { book_id: string } | undefined
+  if (!chapter || chapter.book_id !== bookId) return rowVersion
+
+  const anchorId = existing?.anchor_id ?? requireString(value, 'anchor_id')
+  database
+    .prepare(
+      `INSERT INTO chapter_anchors (
+         id, chapter_id, start_offset, end_offset, fallback_location, quote, prefix, suffix,
+         content_hash, resolution_status, created_at, updated_at, deleted_at, row_version
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT(id) DO UPDATE SET
+         chapter_id = excluded.chapter_id, start_offset = excluded.start_offset,
+         end_offset = excluded.end_offset, fallback_location = excluded.fallback_location,
+         quote = excluded.quote, prefix = excluded.prefix, suffix = excluded.suffix,
+         content_hash = excluded.content_hash, resolution_status = excluded.resolution_status,
+         updated_at = excluded.updated_at, deleted_at = excluded.deleted_at, row_version = 1`
+    )
+    .run(
+      anchorId,
+      chapterId,
+      startOffset,
+      endOffset,
+      fallback,
+      quote,
+      prefix,
+      suffix,
+      contentHash,
+      status,
+      createdAt,
+      updatedAt,
+      deletedAt
+    )
+  database
+    .prepare(
+      `INSERT INTO annotations (
+         id, book_id, anchor_id, kind, body, color, created_at, updated_at, deleted_at,
+         row_version
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         anchor_id = excluded.anchor_id, kind = excluded.kind, body = excluded.body,
+         color = excluded.color, updated_at = excluded.updated_at,
+         deleted_at = excluded.deleted_at, row_version = excluded.row_version`
+    )
+    .run(
+      annotationId,
+      bookId,
+      anchorId,
+      kind,
+      body,
+      color,
+      createdAt,
+      updatedAt,
+      deletedAt,
+      rowVersion - 1
+    )
+  return rowVersion
+}
+
 function localEntity(
   libraryId: string,
   entityType: DesktopSyncEntityType,
@@ -347,6 +516,9 @@ export function applyLocalSyncEntity(
       throw new StoryboundError('VALIDATION_ERROR', `Unsupported synced media: ${entityId}`)
     }
     return applyCover(database, entityId.slice(BOOK_COVER_PREFIX.length), operation, value, media)
+  }
+  if (entityType === 'annotation') {
+    return applyAnnotation(database, entityId, operation, value)
   }
   if (operation === 'delete') {
     const deletedAt =

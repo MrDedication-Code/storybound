@@ -1,14 +1,17 @@
 import type {
+  Annotation,
   BookDetail,
   BookSummary,
   Chapter,
   ChapterSummary,
+  CreateAnnotationInput,
   LibrarySummary,
   LocalSyncStatus,
   MobilePreferences,
   MobileRepository,
   ReadingState,
   SaveReadingStateInput,
+  UpdateAnnotationInput,
   UpdateChapterInput
 } from '../../domain/contracts'
 import {
@@ -16,7 +19,7 @@ import {
   READER_FONT_SIZE_MAX,
   READER_FONT_SIZE_MIN
 } from '../../domain/contracts'
-import { clamp } from '../../domain/reading'
+import { clamp, quoteText } from '../../domain/reading'
 import {
   createSqlWriteCoordinator,
   type SqlDatabasePort,
@@ -137,6 +140,57 @@ function mapReadingState(row: ReadingStateRow): ReadingState {
   }
 }
 
+interface AnnotationRow {
+  id: string
+  book_id: string
+  chapter_id: string
+  chapter_title: string
+  kind: Annotation['kind']
+  body: string
+  color: string
+  start_offset: number | null
+  end_offset: number | null
+  fallback_location: number
+  quote: string
+  prefix: string
+  suffix: string
+  created_at: string
+  updated_at: string
+}
+
+const annotationQuery = `
+  SELECT a.id, a.book_id, a.chapter_id, c.title AS chapter_title, a.kind, a.body, a.color,
+    a.start_offset, a.end_offset, a.fallback_location, a.quote, a.prefix, a.suffix,
+    a.created_at, a.updated_at
+  FROM annotations a
+  JOIN chapters c ON c.id = a.chapter_id AND c.deleted_at IS NULL
+  JOIN books b ON b.id = a.book_id AND b.deleted_at IS NULL
+`
+
+function mapAnnotation(row: AnnotationRow): Annotation {
+  return {
+    id: row.id,
+    bookId: row.book_id,
+    chapterId: row.chapter_id,
+    chapterTitle: row.chapter_title,
+    kind: row.kind,
+    body: row.body,
+    color: row.color,
+    startOffset: row.start_offset,
+    endOffset: row.end_offset,
+    fallbackLocation: row.fallback_location,
+    quote: row.quote,
+    prefix: row.prefix,
+    suffix: row.suffix,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
+const MAX_NOTE_LENGTH = 100_000
+// How much text either side of a highlight is saved to find it again after edits.
+const ANCHOR_CONTEXT = 128
+
 async function getBookSummary(database: SqlDatabasePort, bookId: string): Promise<BookSummary> {
   const row = await database.getFirstAsync<BookRow>(
     `${bookSummaryQuery} WHERE b.id = ? AND b.deleted_at IS NULL`,
@@ -148,10 +202,11 @@ async function getBookSummary(database: SqlDatabasePort, bookId: string): Promis
 
 async function recordChange(
   transaction: SqlDatabasePort,
-  entityType: 'chapter' | 'reading_state',
+  entityType: 'chapter' | 'reading_state' | 'annotation',
   entityId: string,
   changedAt: string,
-  rowVersion: number
+  rowVersion: number,
+  operation: 'upsert' | 'delete' = 'upsert'
 ): Promise<void> {
   const syncEntityType = entityType === 'reading_state' ? 'reading-state' : entityType
   await transaction.runAsync(
@@ -159,7 +214,7 @@ async function recordChange(
        entity_type, entity_id, operation, changed_at, row_version,
        base_remote_revision, mutation_id
      ) VALUES (
-       ?, ?, 'upsert', ?, ?,
+       ?, ?, ?, ?, ?,
        (SELECT remote_revision FROM sync_entity_state WHERE entity_type = ? AND entity_id = ?),
        NULL
      )
@@ -168,7 +223,7 @@ async function recordChange(
        changed_at = excluded.changed_at,
        row_version = excluded.row_version,
        mutation_id = NULL`,
-    [syncEntityType, entityId, changedAt, rowVersion, syncEntityType, entityId]
+    [syncEntityType, entityId, operation, changedAt, rowVersion, syncEntityType, entityId]
   )
 }
 
@@ -198,8 +253,25 @@ function sanitizePreferences(
 export function createSQLiteRepository(
   database: SqlDatabasePort,
   now: () => Date = () => new Date(),
-  writes: SqlWriteCoordinator = createSqlWriteCoordinator()
+  writes: SqlWriteCoordinator = createSqlWriteCoordinator(),
+  createId: () => string = () => globalThis.crypto.randomUUID()
 ): MobileRepository {
+  async function requireAnnotation(
+    source: SqlDatabasePort,
+    id: string
+  ): Promise<AnnotationRow & { row_version: number }> {
+    const row = await source.getFirstAsync<AnnotationRow & { row_version: number }>(
+      `SELECT a.id, a.book_id, a.chapter_id, COALESCE(c.title, '') AS chapter_title, a.kind,
+         a.body, a.color, a.start_offset, a.end_offset, a.fallback_location, a.quote, a.prefix,
+         a.suffix, a.created_at, a.updated_at, a.row_version
+       FROM annotations a LEFT JOIN chapters c ON c.id = a.chapter_id
+       WHERE a.id = ? AND a.deleted_at IS NULL`,
+      [id]
+    )
+    if (!row) throw new Error('That highlight could not be found.')
+    return row
+  }
+
   async function readPreferences(): Promise<MobilePreferences> {
     const rows = await database.getAllAsync<{ key: string; value: string }>(
       'SELECT key, value FROM app_preferences'
@@ -377,6 +449,134 @@ export function createSQLiteRepository(
         })
 
         return next
+      })
+    },
+
+    async listAnnotations(bookId: string): Promise<Annotation[]> {
+      const rows = await database.getAllAsync<AnnotationRow>(
+        `${annotationQuery}
+         WHERE a.book_id = ? AND a.deleted_at IS NULL
+         ORDER BY c.position, a.fallback_location, a.created_at`,
+        [bookId]
+      )
+      return rows.map(mapAnnotation)
+    },
+
+    createAnnotation(input: CreateAnnotationInput): Promise<Annotation> {
+      return writes.run(async () => {
+        const body = input.body.trim()
+        if (body.length > MAX_NOTE_LENGTH) throw new Error('That note is too long.')
+        const color = input.color.trim().slice(0, 40) || 'gold'
+        const createdAt = now().toISOString()
+        const id = createId()
+        let created: Annotation | null = null
+
+        await database.transactionAsync(async (transaction) => {
+          const chapter = await transaction.getFirstAsync<{ content: string }>(
+            `SELECT c.content FROM chapters c
+             JOIN books b ON b.id = c.book_id AND b.deleted_at IS NULL
+             WHERE c.id = ? AND c.book_id = ? AND c.deleted_at IS NULL`,
+            [input.chapterId, input.bookId]
+          )
+          if (!chapter) throw new Error('That chapter does not belong to this book.')
+          const { content } = chapter
+          const start = Math.trunc(input.startOffset)
+          const end = Math.trunc(input.endOffset)
+          if (!(start >= 0 && end > start && end <= content.length)) {
+            throw new Error('Choose some text to highlight.')
+          }
+          // The desktop finds highlights in the rendered page, so the quote is saved without
+          // Markdown markers; the offsets still point at the stored text.
+          const selected = content.slice(start, end)
+          const quote = quoteText(selected)
+          if (!quote) throw new Error('Choose some text to highlight.')
+          // A new record starts at 2: the desktop counts a note and its anchor separately.
+          const rowVersion = 2
+          await transaction.runAsync(
+            `INSERT INTO annotations (
+               id, book_id, chapter_id, anchor_id, kind, body, color, start_offset, end_offset,
+               fallback_location, quote, prefix, suffix, content_hash, resolution_status,
+               created_at, updated_at, deleted_at, row_version
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, NULL, ?)`,
+            [
+              id,
+              input.bookId,
+              input.chapterId,
+              createId(),
+              body ? 'note' : 'highlight',
+              body,
+              color,
+              start,
+              end,
+              content.length ? start / content.length : 0,
+              quote,
+              content.slice(Math.max(0, start - ANCHOR_CONTEXT), start),
+              content.slice(end, end + ANCHOR_CONTEXT),
+              quote === selected ? 'resolved' : 'approximate',
+              createdAt,
+              createdAt,
+              rowVersion
+            ]
+          )
+          await recordChange(transaction, 'annotation', id, createdAt, rowVersion)
+          created = mapAnnotation(await requireAnnotation(transaction, id))
+        })
+
+        if (!created) throw new Error('The highlight did not save.')
+        return created
+      })
+    },
+
+    updateAnnotation(input: UpdateAnnotationInput): Promise<Annotation> {
+      return writes.run(async () => {
+        const body = input.body.trim()
+        if (body.length > MAX_NOTE_LENGTH) throw new Error('That note is too long.')
+        const updatedAt = now().toISOString()
+        let updated: Annotation | null = null
+        await database.transactionAsync(async (transaction) => {
+          const existing = await requireAnnotation(transaction, input.id)
+          // A plain highlight that gains words becomes a note, as it would on the desktop.
+          const kind = existing.kind === 'highlight' && body ? 'note' : existing.kind
+          await transaction.runAsync(
+            `UPDATE annotations
+             SET body = ?, color = ?, kind = ?, updated_at = ?, row_version = row_version + 1
+             WHERE id = ?`,
+            [body, input.color.trim().slice(0, 40) || existing.color, kind, updatedAt, input.id]
+          )
+          await recordChange(
+            transaction,
+            'annotation',
+            input.id,
+            updatedAt,
+            existing.row_version + 1
+          )
+          updated = mapAnnotation(await requireAnnotation(transaction, input.id))
+        })
+        if (!updated) throw new Error('The highlight did not save.')
+        return updated
+      })
+    },
+
+    removeAnnotation(id: string): Promise<void> {
+      return writes.run(async () => {
+        const deletedAt = now().toISOString()
+        await database.transactionAsync(async (transaction) => {
+          const existing = await requireAnnotation(transaction, id)
+          await transaction.runAsync(
+            `UPDATE annotations
+             SET deleted_at = ?, updated_at = ?, row_version = row_version + 1
+             WHERE id = ?`,
+            [deletedAt, deletedAt, id]
+          )
+          await recordChange(
+            transaction,
+            'annotation',
+            id,
+            deletedAt,
+            existing.row_version + 1,
+            'delete'
+          )
+        })
       })
     },
 

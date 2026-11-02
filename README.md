@@ -141,7 +141,7 @@ For valuable writing:
 - Portable exports and encrypted vault payloads are limited to 500 MB.
 - The live SQLite database and ordinary package/backup files are not encrypted. Use full-disk encryption or the encrypted vault export where appropriate.
 - The Expo iOS/Android client covers the core library, reader, editor, reading position, and encrypted-sync flow; organisation and writing-statistics screens remain desktop-first.
-- Encrypted sync covers libraries, book metadata, chapters, reading position, and custom cover images (sent as a resized JPEG of at most 900×1350). Tags, collections, annotations, Story Bible records, revisions, and writing statistics remain local/export-backed until their mobile models are added.
+- Encrypted sync covers libraries, book metadata, chapters, reading position, custom cover images (sent as a resized JPEG of at most 900×1350), and highlights and notes. Bookmarks, tags, collections, Story Bible records, revisions, and writing statistics remain local/export-backed until their mobile models are added.
 - Generated cover options are local colour treatments, not AI-generated illustrations.
 - Installers remain unsigned and unnotarised until release credentials are configured.
 

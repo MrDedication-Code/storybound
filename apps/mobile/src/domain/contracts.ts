@@ -70,6 +70,45 @@ export interface LocalSyncStatus {
   lastSyncAt: null
 }
 
+/** The highlight colours the desktop reader knows; others display as gold. */
+export const ANNOTATION_COLORS = ['gold', 'blue', 'green', 'pink', 'purple', 'orange'] as const
+export type AnnotationColor = (typeof ANNOTATION_COLORS)[number]
+
+/** A highlight or a note, with where it was made in the chapter. */
+export interface Annotation {
+  id: string
+  bookId: string
+  chapterId: string
+  chapterTitle: string
+  kind: 'highlight' | 'note'
+  body: string
+  color: string
+  startOffset: number | null
+  endOffset: number | null
+  fallbackLocation: number
+  quote: string
+  prefix: string
+  suffix: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateAnnotationInput {
+  bookId: string
+  chapterId: string
+  /** Character offsets into the chapter's stored text. */
+  startOffset: number
+  endOffset: number
+  body: string
+  color: string
+}
+
+export interface UpdateAnnotationInput {
+  id: string
+  body: string
+  color: string
+}
+
 /** Reader mode hides every editing control; editor mode adds them back. */
 export type AppMode = 'reader' | 'editor'
 
@@ -97,6 +136,11 @@ export interface MobileRepository {
   updateChapter(input: UpdateChapterInput): Promise<Chapter>
   getReadingState(bookId: string): Promise<ReadingState>
   saveReadingState(input: SaveReadingStateInput): Promise<ReadingState>
+  /** Highlights and notes in the book's chapters that are not in Trash, in reading order. */
+  listAnnotations(bookId: string): Promise<Annotation[]>
+  createAnnotation(input: CreateAnnotationInput): Promise<Annotation>
+  updateAnnotation(input: UpdateAnnotationInput): Promise<Annotation>
+  removeAnnotation(id: string): Promise<void>
   getSyncStatus(): Promise<LocalSyncStatus>
   getPreferences(): Promise<MobilePreferences>
   savePreferences(changes: Partial<MobilePreferences>): Promise<MobilePreferences>

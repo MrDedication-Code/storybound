@@ -61,6 +61,15 @@ function nullableNumber(
   return numberValue(row, key, minimum, maximum)
 }
 
+/** Optional text with a size limit; a missing value reads as empty. */
+function boundedString(row: Record<string, unknown>, key: string, maximum: number): string {
+  const value = row[key] ?? ''
+  if (typeof value !== 'string' || value.length > maximum) {
+    throw new Error(`The synced ${key} is invalid.`)
+  }
+  return value
+}
+
 function booleanInteger(row: Record<string, unknown>, key: string): number {
   return numberValue(row, key, 0, 1, true)
 }
@@ -171,6 +180,51 @@ export function normalizeRemoteEntity(
         word_count: numberValue(row, 'word_count', 0, Number.MAX_SAFE_INTEGER, true),
         deleted_at: nullableString(row, 'deleted_at'),
         trashed_from_position: nullableNumber(row, 'trashed_from_position', 0),
+        row_version: rowVersion
+      }
+    }
+  }
+
+  if (entityType === 'annotation') {
+    ensureIdentifier(row, 'id', entityId)
+    const kind = stringValue(row, 'kind')
+    if (kind !== 'highlight' && kind !== 'note') {
+      throw new Error('The synced annotation kind is invalid.')
+    }
+    const startOffset = nullableNumber(row, 'start_offset', 0)
+    const endOffset = nullableNumber(row, 'end_offset', 0)
+    if (
+      (startOffset === null) !== (endOffset === null) ||
+      (startOffset !== null && (!Number.isInteger(startOffset) || !Number.isInteger(endOffset))) ||
+      (startOffset !== null && endOffset !== null && startOffset > endOffset)
+    ) {
+      throw new Error('The synced highlight position is invalid.')
+    }
+    const status = row.resolution_status
+    return {
+      entityType,
+      entityId,
+      rowVersion,
+      values: {
+        id: entityId,
+        book_id: stringValue(row, 'book_id'),
+        chapter_id: stringValue(row, 'chapter_id'),
+        anchor_id: stringValue(row, 'anchor_id'),
+        kind,
+        body: boundedString(row, 'body', 100_000),
+        color: boundedString(row, 'color', 40) || 'gold',
+        start_offset: startOffset,
+        end_offset: endOffset,
+        fallback_location: numberValue(row, 'fallback_location', 0, 1),
+        quote: boundedString(row, 'quote', 100_000),
+        prefix: boundedString(row, 'prefix', 2_000),
+        suffix: boundedString(row, 'suffix', 2_000),
+        content_hash: boundedString(row, 'content_hash', 128),
+        resolution_status:
+          status === 'resolved' || status === 'unresolved' ? status : 'approximate',
+        created_at: stringValue(row, 'created_at'),
+        updated_at: stringValue(row, 'updated_at'),
+        deleted_at: nullableString(row, 'deleted_at'),
         row_version: rowVersion
       }
     }

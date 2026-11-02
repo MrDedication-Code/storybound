@@ -245,6 +245,111 @@ describe('DesktopSyncEngine', () => {
     expect(existsSync(join(targetMedia, received.cover_image_path))).toBe(false)
   })
 
+  it('syncs highlights and notes with their place in the chapter, both ways', async () => {
+    const provider = new MemoryProvider()
+    const key = Uint8Array.from({ length: 32 }, (_, index) => index + 5)
+    const source = await databaseWithProfile(DEVICE_A)
+    source
+      .prepare(
+        `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+         VALUES ('book-notes', 'Annotated', '', 'ongoing', ?, ?, 4)`
+      )
+      .run(NOW, NOW)
+    for (const [id, position] of [
+      ['chapter-one', 0],
+      ['chapter-two', 1]
+    ] as const) {
+      source
+        .prepare(
+          `INSERT INTO chapters (
+             id, book_id, title, content, position, created_at, updated_at, word_count
+           ) VALUES (?, 'book-notes', ?, 'The lamp went out at midnight.', ?, ?, ?, 6)`
+        )
+        .run(id, id, position, NOW, NOW)
+    }
+    source
+      .prepare(
+        `INSERT INTO chapter_anchors (
+           id, chapter_id, start_offset, end_offset, fallback_location, quote, prefix, suffix,
+           content_hash, resolution_status, created_at, updated_at
+         ) VALUES ('anchor-1', 'chapter-one', 4, 18, 0.1, 'lamp went out', 'The ', ' at',
+           'hash', 'resolved', ?, ?)`
+      )
+      .run(NOW, NOW)
+    source
+      .prepare(
+        `INSERT INTO annotations (id, book_id, anchor_id, kind, body, color, created_at, updated_at)
+         VALUES ('note-1', 'book-notes', 'anchor-1', 'note', 'Foreshadowing?', 'blue', ?, ?)`
+      )
+      .run(NOW, NOW)
+
+    const sourceEngine = new DesktopSyncEngine(source, provider, PROFILE_ID, DEVICE_A, key, 1)
+    await sourceEngine.run()
+    const target = await databaseWithProfile(DEVICE_B)
+    const targetEngine = new DesktopSyncEngine(target, provider, PROFILE_ID, DEVICE_B, key, 1)
+    await targetEngine.run()
+
+    const readNote = (database: Database.Database): Record<string, unknown> =>
+      database
+        .prepare(
+          `SELECT a.kind, a.body, a.color, a.deleted_at, anchor.chapter_id, anchor.quote,
+             anchor.start_offset, a.row_version + anchor.row_version AS version
+           FROM annotations a JOIN chapter_anchors anchor ON anchor.id = a.anchor_id
+           WHERE a.id = 'note-1'`
+        )
+        .get() as Record<string, unknown>
+    expect(readNote(target)).toMatchObject({
+      kind: 'note',
+      body: 'Foreshadowing?',
+      color: 'blue',
+      chapter_id: 'chapter-one',
+      quote: 'lamp went out',
+      start_offset: 4,
+      version: 2
+    })
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+
+    // Edited on the second device, then moved to another chapter (a merge) on the first.
+    target
+      .prepare(
+        `UPDATE annotations SET body = 'Definitely foreshadowing.', updated_at = ?,
+           row_version = row_version + 1 WHERE id = 'note-1'`
+      )
+      .run('2026-08-06T21:00:00.000Z')
+    await targetEngine.run()
+    await sourceEngine.run()
+    expect(readNote(source)).toMatchObject({ body: 'Definitely foreshadowing.', version: 3 })
+    source
+      .prepare(
+        `UPDATE chapter_anchors SET chapter_id = 'chapter-two', row_version = row_version + 1
+         WHERE id = 'anchor-1'`
+      )
+      .run()
+    await sourceEngine.run()
+    await targetEngine.run()
+    expect(readNote(target)).toMatchObject({ chapter_id: 'chapter-two', version: 4 })
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+
+    source
+      .prepare(
+        `UPDATE annotations SET deleted_at = ?, row_version = row_version + 1 WHERE id = 'note-1'`
+      )
+      .run('2026-08-06T22:00:00.000Z')
+    source
+      .prepare(
+        `UPDATE chapter_anchors SET deleted_at = ?, row_version = row_version + 1
+         WHERE id = 'anchor-1'`
+      )
+      .run('2026-08-06T22:00:00.000Z')
+    await sourceEngine.run()
+    await targetEngine.run()
+    expect(readNote(target)).toMatchObject({ deleted_at: '2026-08-06T22:00:00.000Z' })
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
   it('skips record types this version does not understand instead of failing', async () => {
     const provider = new MemoryProvider()
     const key = Uint8Array.from({ length: 32 }, (_, index) => index + 11)

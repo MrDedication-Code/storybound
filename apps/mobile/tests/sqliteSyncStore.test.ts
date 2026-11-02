@@ -353,6 +353,105 @@ describe('SQLite encrypted sync store', () => {
     expect((await repository.getBook('glass-orchard')).coverUri).toBeNull()
   })
 
+  it('receives highlights and notes, and sends ones made, edited, or deleted here', async () => {
+    const writes = createSqlWriteCoordinator()
+    let nextId = 0
+    const repository = createSQLiteRepository(
+      database!,
+      () => new Date('2026-08-06T12:05:00Z'),
+      writes,
+      () => `local-${(nextId += 1)}`
+    )
+    syncStore = new SQLiteSyncStore(database!, writes, () => new Date('2026-08-06T12:06:00Z'))
+    await syncStore.activateProfile(vaultId, deviceId)
+    const quote = 'The lantern woke before the keeper did.'
+    const remote = (
+      operation: 'upsert' | 'delete',
+      revision: string,
+      value: Record<string, unknown>
+    ): DecryptedRemoteChange => ({
+      mutationId: `${revision.padStart(8, '0')}-9999-4999-8999-999999999999`,
+      deviceId: remoteDeviceId,
+      entityType: 'annotation',
+      entityId: 'desk-note',
+      operation,
+      remoteRevision: revision,
+      changedAt: '2026-08-06T12:00:00Z',
+      payload: encryptedPayload,
+      value
+    })
+    await syncStore.applyPullPage(null, '1', deviceId, [
+      remote('upsert', '1', {
+        id: 'desk-note',
+        book_id: 'lantern-house',
+        chapter_id: 'lantern-1',
+        anchor_id: 'desk-anchor',
+        kind: 'note',
+        body: 'Lovely opening.',
+        color: 'blue',
+        start_offset: 0,
+        end_offset: quote.length,
+        fallback_location: 0,
+        quote,
+        prefix: '',
+        suffix: ' Its glass',
+        content_hash: 'abc',
+        resolution_status: 'resolved',
+        created_at: '2026-08-06T11:00:00Z',
+        updated_at: '2026-08-06T11:00:00Z',
+        deleted_at: null,
+        row_version: 2
+      })
+    ])
+    await expect(repository.listAnnotations('lantern-house')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'desk-note',
+        chapterTitle: 'The Light on Blackwater Point',
+        body: 'Lovely opening.',
+        color: 'blue',
+        quote
+      })
+    ])
+    // Received records are not sent back.
+    await expect(syncStore.claimPendingChanges(createMutationId)).resolves.toEqual([])
+
+    const created = await repository.createAnnotation({
+      bookId: 'lantern-house',
+      chapterId: 'lantern-1',
+      startOffset: 4,
+      endOffset: 11,
+      body: '',
+      color: 'green'
+    })
+    expect(created).toMatchObject({ kind: 'highlight', quote: 'lantern', startOffset: 4 })
+    await repository.updateAnnotation({ id: created.id, body: 'A living light?', color: 'pink' })
+    const [sent] = await syncStore.claimPendingChanges(createMutationId)
+    expect(sent).toMatchObject({ entityType: 'annotation', entityId: 'local-1', rowVersion: 3 })
+    expect(sent.value).toMatchObject({
+      id: 'local-1',
+      anchor_id: 'local-2',
+      kind: 'note',
+      body: 'A living light?',
+      color: 'pink',
+      quote: 'lantern',
+      prefix: 'The ',
+      row_version: 3
+    })
+
+    await repository.removeAnnotation(created.id)
+    const [removal] = await syncStore.claimPendingChanges(createMutationId)
+    expect(removal).toMatchObject({
+      operation: 'delete',
+      rowVersion: 4,
+      value: { deletedAt: '2026-08-06T12:05:00.000Z', rowVersion: 4 }
+    })
+
+    await syncStore.applyPullPage('1', '2', deviceId, [
+      remote('delete', '2', { deletedAt: '2026-08-06T12:10:00Z', rowVersion: 4 })
+    ])
+    await expect(repository.listAnnotations('lantern-house')).resolves.toEqual([])
+  })
+
   it('records a pull conflict and excludes that entity from future push claims', async () => {
     const writes = createSqlWriteCoordinator()
     const repository = createSQLiteRepository(

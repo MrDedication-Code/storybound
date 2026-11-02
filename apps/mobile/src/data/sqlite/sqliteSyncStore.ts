@@ -212,6 +212,17 @@ export class SQLiteSyncStore {
             `SELECT 'reading-state' AS entity_type, r.book_id AS entity_id, r.row_version,
                     r.updated_at AS changed_at
              FROM reading_states r JOIN books b ON b.id = r.book_id`
+          )),
+          ...(await transaction.getAllAsync<{
+            entity_type: CoreSyncEntityType
+            entity_id: string
+            row_version: number
+            changed_at: string
+          }>(
+            `SELECT 'annotation' AS entity_type, a.id AS entity_id, a.row_version,
+                    a.updated_at AS changed_at
+             FROM annotations a JOIN books b ON b.id = a.book_id
+             WHERE a.deleted_at IS NULL`
           ))
         ]
         for (const entity of entities) {
@@ -521,6 +532,15 @@ export class SQLiteSyncStore {
         [entityId]
       )
       if (row) return row
+    } else if (entityType === 'annotation') {
+      const row = await database.getFirstAsync<Record<string, unknown>>(
+        `SELECT id, book_id, chapter_id, anchor_id, kind, body, color, start_offset, end_offset,
+                fallback_location, quote, prefix, suffix, content_hash, resolution_status,
+                created_at, updated_at, deleted_at, row_version
+         FROM annotations WHERE id = ?`,
+        [entityId]
+      )
+      if (row) return row
     } else {
       const row = await database.getFirstAsync<Record<string, unknown>>(
         `SELECT book_id, chapter_id, scroll_position, progress_percentage, last_read_at,
@@ -549,9 +569,12 @@ export class SQLiteSyncStore {
           change.entityId
         ])
       } else {
-        const table = { library: 'libraries', book: 'books', chapter: 'chapters' }[
-          change.entityType
-        ]
+        const table = {
+          library: 'libraries',
+          book: 'books',
+          chapter: 'chapters',
+          annotation: 'annotations'
+        }[change.entityType]
         await transaction.runAsync(
           `UPDATE ${table} SET deleted_at = ?, row_version = ? WHERE id = ?`,
           [deletion.deletedAt, deletion.rowVersion, change.entityId]
@@ -683,6 +706,47 @@ export class SQLiteSyncStore {
           requiredValue(value, 'updated_at'),
           value.deleted_at,
           value.trashed_from_position,
+          requiredValue(value, 'row_version')
+        ]
+      )
+      return
+    }
+
+    if (change.entityType === 'annotation') {
+      await transaction.runAsync(
+        `INSERT INTO annotations (
+           id, book_id, chapter_id, anchor_id, kind, body, color, start_offset, end_offset,
+           fallback_location, quote, prefix, suffix, content_hash, resolution_status,
+           created_at, updated_at, deleted_at, row_version
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           book_id = excluded.book_id, chapter_id = excluded.chapter_id,
+           anchor_id = excluded.anchor_id, kind = excluded.kind, body = excluded.body,
+           color = excluded.color, start_offset = excluded.start_offset,
+           end_offset = excluded.end_offset, fallback_location = excluded.fallback_location,
+           quote = excluded.quote, prefix = excluded.prefix, suffix = excluded.suffix,
+           content_hash = excluded.content_hash, resolution_status = excluded.resolution_status,
+           created_at = excluded.created_at, updated_at = excluded.updated_at,
+           deleted_at = excluded.deleted_at, row_version = excluded.row_version`,
+        [
+          change.entityId,
+          requiredValue(value, 'book_id'),
+          requiredValue(value, 'chapter_id'),
+          requiredValue(value, 'anchor_id'),
+          requiredValue(value, 'kind'),
+          requiredValue(value, 'body'),
+          requiredValue(value, 'color'),
+          value.start_offset,
+          value.end_offset,
+          requiredValue(value, 'fallback_location'),
+          requiredValue(value, 'quote'),
+          requiredValue(value, 'prefix'),
+          requiredValue(value, 'suffix'),
+          requiredValue(value, 'content_hash'),
+          requiredValue(value, 'resolution_status'),
+          requiredValue(value, 'created_at'),
+          requiredValue(value, 'updated_at'),
+          value.deleted_at,
           requiredValue(value, 'row_version')
         ]
       )

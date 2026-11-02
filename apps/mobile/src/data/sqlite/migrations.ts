@@ -2,7 +2,7 @@ import type { SqlDatabasePort } from './databasePort'
 import { seedLibrary } from './seedData'
 
 export const DATABASE_NAME = 'storybound.db'
-export const DATABASE_VERSION = 4
+export const DATABASE_VERSION = 5
 
 const schemaVersionOne = `
 CREATE TABLE IF NOT EXISTS libraries (
@@ -172,6 +172,49 @@ CREATE TABLE book_covers (
 );
 `
 
+// Highlights and notes, each with its place in the chapter folded in (on the desktop the place
+// is a separate anchor record). A row is kept after deletion so the deletion can sync.
+const schemaVersionFive = `
+CREATE TABLE annotations (
+  id TEXT PRIMARY KEY NOT NULL,
+  book_id TEXT NOT NULL,
+  chapter_id TEXT NOT NULL,
+  anchor_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('highlight', 'note')),
+  body TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT 'gold',
+  start_offset INTEGER,
+  end_offset INTEGER,
+  fallback_location REAL NOT NULL DEFAULT 0 CHECK (fallback_location BETWEEN 0 AND 1),
+  quote TEXT NOT NULL DEFAULT '',
+  prefix TEXT NOT NULL DEFAULT '',
+  suffix TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  resolution_status TEXT NOT NULL DEFAULT 'approximate',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  row_version INTEGER NOT NULL CHECK (row_version >= 1)
+);
+CREATE INDEX annotations_book_idx ON annotations (book_id, deleted_at);
+
+-- Rebuilt so pending changes can include highlights and notes.
+ALTER TABLE change_records RENAME TO change_records_v2;
+CREATE TABLE change_records (
+  entity_type TEXT NOT NULL
+    CHECK (entity_type IN ('library', 'book', 'chapter', 'reading-state', 'annotation')),
+  entity_id TEXT NOT NULL,
+  operation TEXT NOT NULL DEFAULT 'upsert' CHECK (operation IN ('upsert', 'delete')),
+  changed_at TEXT NOT NULL,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  base_remote_revision TEXT,
+  mutation_id TEXT,
+  PRIMARY KEY (entity_type, entity_id)
+);
+INSERT INTO change_records SELECT * FROM change_records_v2;
+DROP TABLE change_records_v2;
+`
+
 async function createFirstLibrary(transaction: SqlDatabasePort): Promise<void> {
   await transaction.runAsync(
     `INSERT OR IGNORE INTO libraries (id, name, created_at, updated_at)
@@ -216,6 +259,11 @@ export async function migrateDatabase(database: SqlDatabasePort): Promise<void> 
     if (currentVersion < 4) {
       await transaction.execAsync(schemaVersionFour)
       await transaction.execAsync('PRAGMA user_version = 4')
+    }
+
+    if (currentVersion < 5) {
+      await transaction.execAsync(schemaVersionFive)
+      await transaction.execAsync('PRAGMA user_version = 5')
     }
   })
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Pressable,
   ScrollView,
@@ -10,12 +10,19 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance
 } from 'react-native'
+import { AnnotationList } from '../components/AnnotationList'
+import {
+  AnnotationSheet,
+  type AnnotationDraft,
+  type AnnotationSheetTarget
+} from '../components/AnnotationSheet'
 import { AppHeader } from '../components/AppHeader'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
 import {
   READER_FONT_SIZE_MAX,
   READER_FONT_SIZE_MIN,
+  type Annotation,
   type BookDetail,
   type Chapter,
   type MobilePreferences,
@@ -23,8 +30,14 @@ import {
   type ReaderTheme,
   type ReadingState
 } from '../domain/contracts'
-import { calculateReadingProgress, parseStoryBlocks } from '../domain/reading'
-import { storyboundColors } from '../theme'
+import {
+  calculateReadingProgress,
+  parseStoryBlocks,
+  placeAnnotations,
+  segmentBlock,
+  type StoryBlock
+} from '../domain/reading'
+import { highlightColor, storyboundColors } from '../theme'
 
 const readerPalettes: Record<
   ReaderTheme,
@@ -87,6 +100,9 @@ export function ReaderScreen({
     onChangePreferences({ readerFontSize })
   }
   const [controlsOpen, setControlsOpen] = useState(false)
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [sheet, setSheet] = useState<AnnotationSheetTarget | null>(null)
+  const [listOpen, setListOpen] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
   const scrollRef = useRef<ScrollViewInstance>(null)
@@ -95,20 +111,27 @@ export function ReaderScreen({
   const positionRef = useRef(0)
   const restorePendingRef = useRef(true)
   const lastSaveAtRef = useRef(0)
+  // Where each block sits in the scroll view, keyed by its offset in the chapter text, so a
+  // highlight chosen from the list can be scrolled to once its chapter has laid out.
+  const blockYRef = useRef(new Map<number, number>())
+  const proseYRef = useRef<number | null>(null)
+  const pendingJumpRef = useRef<number | null>(null)
 
   const loadChapter = useCallback(
     async (
       nextBook: BookDetail,
       chapterId: string,
       restore: ReadingState | null
-    ): Promise<void> => {
+    ): Promise<Chapter> => {
       const nextChapter = await repository.getChapter(chapterId)
+      blockYRef.current = new Map()
       setChapter(nextChapter)
       const index = nextBook.chapters.findIndex((item) => item.id === nextChapter.id)
       const position = restore?.chapterId === nextChapter.id ? restore.scrollPosition : 0
       positionRef.current = position
       restorePendingRef.current = true
       setProgress(calculateReadingProgress(index, nextBook.chapters.length, position))
+      return nextChapter
     },
     [repository]
   )
@@ -117,15 +140,17 @@ export function ReaderScreen({
     let active = true
     const load = async (): Promise<void> => {
       try {
-        const [nextBook, nextReading] = await Promise.all([
+        const [nextBook, nextReading, nextAnnotations] = await Promise.all([
           repository.getBook(bookId),
-          repository.getReadingState(bookId)
+          repository.getReadingState(bookId),
+          repository.listAnnotations(bookId)
         ])
         if (!active) return
         const nextChapterId =
           initialChapterId ?? nextReading.chapterId ?? nextBook.chapters[0]?.id ?? null
         setBook(nextBook)
         setReading(nextReading)
+        setAnnotations(nextAnnotations)
         if (nextChapterId) await loadChapter(nextBook, nextChapterId, nextReading)
       } catch (caught) {
         if (active)
@@ -188,6 +213,70 @@ export function ReaderScreen({
     scrollRef.current?.scrollTo({ animated: false, y: 0 })
   }
 
+  const blocks = useMemo(() => (chapter ? parseStoryBlocks(chapter.content) : []), [chapter])
+  const placed = useMemo(
+    () =>
+      chapter
+        ? placeAnnotations(
+            chapter.content,
+            annotations.filter((annotation) => annotation.chapterId === chapter.id)
+          )
+        : [],
+    [annotations, chapter]
+  )
+
+  const tryPendingJump = (): void => {
+    const target = pendingJumpRef.current
+    if (target === null || proseYRef.current === null) return
+    const block = blocks.find((item) => item.end >= target) ?? blocks.at(-1)
+    if (!block) {
+      pendingJumpRef.current = null
+      return
+    }
+    const y = blockYRef.current.get(block.start)
+    if (y === undefined) return
+    pendingJumpRef.current = null
+    scrollRef.current?.scrollTo({ animated: true, y: Math.max(0, proseYRef.current + y - 24) })
+  }
+
+  const recordBlock = (block: StoryBlock, event: LayoutChangeEvent): void => {
+    blockYRef.current.set(block.start, event.nativeEvent.layout.y)
+    tryPendingJump()
+  }
+
+  const refreshAnnotations = async (): Promise<void> => {
+    setAnnotations(await repository.listAnnotations(bookId))
+  }
+
+  const createAnnotation = async (draft: AnnotationDraft): Promise<void> => {
+    if (!chapter) return
+    await repository.createAnnotation({
+      bookId,
+      chapterId: chapter.id,
+      startOffset: draft.start,
+      endOffset: draft.end,
+      body: draft.body,
+      color: draft.color
+    })
+    await refreshAnnotations()
+  }
+
+  const jumpTo = async (annotation: Annotation): Promise<void> => {
+    setListOpen(false)
+    if (!book || !chapter) return
+    let target = chapter
+    if (annotation.chapterId !== chapter.id) {
+      await persistPosition(true)
+      target = await loadChapter(book, annotation.chapterId, null)
+      // Scroll to the highlight instead of the top of the chapter.
+      restorePendingRef.current = false
+    }
+    const [located] = placeAnnotations(target.content, [annotation])
+    pendingJumpRef.current =
+      located.start ?? Math.round(annotation.fallbackLocation * target.content.length)
+    tryPendingJump()
+  }
+
   if (error && (!book || !chapter)) return <ErrorScreen message={error} onBack={onBack} />
   if (!book || !chapter) return <LoadingScreen label="Preparing the next page…" />
 
@@ -195,7 +284,27 @@ export function ReaderScreen({
   const chapterIndex = book.chapters.findIndex((item) => item.id === chapter.id)
   const previous = chapterIndex > 0 ? book.chapters[chapterIndex - 1] : null
   const next = chapterIndex < book.chapters.length - 1 ? book.chapters[chapterIndex + 1] : null
-  const blocks = parseStoryBlocks(chapter.content)
+  const notesLabel = `Highlights & notes${annotations.length ? ` (${annotations.length})` : ''}`
+
+  const renderText = (block: StoryBlock): React.ReactNode[] =>
+    segmentBlock(block, placed).map((segment) => {
+      const text = segment.text.replace(/\r/g, '')
+      const annotation = segment.annotation
+      if (!annotation) return text
+      return (
+        <Text
+          accessibilityHint="Opens this highlight"
+          key={`${annotation.id}-${segment.start}`}
+          style={{ backgroundColor: highlightColor(annotation.color).wash }}
+          onPress={() => setSheet({ mode: 'edit', annotation })}
+        >
+          {text}
+          {segment.endsNote ? (
+            <Text style={[styles.noteMark, { color: palette.muted }]}> ✎</Text>
+          ) : null}
+        </Text>
+      )
+    })
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -257,6 +366,17 @@ export function ReaderScreen({
               <Text style={[styles.sizeLabel, { color: palette.foreground }]}>A+</Text>
             </Pressable>
           </View>
+          <PrimaryButton
+            label={notesLabel}
+            variant="secondary"
+            onPress={() => {
+              setControlsOpen(false)
+              setListOpen(true)
+            }}
+          />
+          <Text style={[styles.controlHint, { color: palette.muted }]}>
+            Long-press a paragraph to highlight it or add a note.
+          </Text>
         </View>
       ) : null}
 
@@ -294,33 +414,46 @@ export function ReaderScreen({
           <Text style={[styles.ornament, { color: storyboundColors.brass }]}>✦</Text>
         </View>
 
-        <View accessibilityRole="text" style={styles.prose}>
+        <View
+          style={styles.prose}
+          onLayout={(event) => {
+            proseYRef.current = event.nativeEvent.layout.y
+            tryPendingJump()
+          }}
+        >
           {blocks.length ? (
-            blocks.map((block, index) =>
+            blocks.map((block) =>
               block.kind === 'divider' ? (
-                <Text key={`divider-${index}`} style={[styles.divider, { color: palette.muted }]}>
+                <Text
+                  key={`divider-${block.start}`}
+                  style={[styles.divider, { color: palette.muted }]}
+                  onLayout={(event) => recordBlock(block, event)}
+                >
                   ◆
                 </Text>
               ) : block.kind === 'heading' ? (
                 <Text
-                  key={`heading-${index}`}
+                  key={`heading-${block.start}`}
                   style={[
                     styles.proseHeading,
                     { color: palette.foreground, fontSize: fontSize + 4 }
                   ]}
+                  onLayout={(event) => recordBlock(block, event)}
                 >
-                  {block.text}
+                  {renderText(block)}
                 </Text>
               ) : (
                 <Text
-                  key={`paragraph-${index}`}
-                  selectable
+                  accessibilityHint="Long-press to highlight or add a note"
+                  key={`paragraph-${block.start}`}
                   style={[
                     styles.paragraph,
                     { color: palette.foreground, fontSize, lineHeight: fontSize * 1.72 }
                   ]}
+                  onLayout={(event) => recordBlock(block, event)}
+                  onLongPress={() => setSheet({ mode: 'create', block })}
                 >
-                  {block.text}
+                  {renderText(block)}
                 </Text>
               )
             )
@@ -332,6 +465,7 @@ export function ReaderScreen({
         </View>
 
         <View style={[styles.chapterActions, { borderTopColor: palette.line }]}>
+          <PrimaryButton label={notesLabel} variant="quiet" onPress={() => setListOpen(true)} />
           {onEditChapter ? (
             <PrimaryButton
               label="Edit chapter"
@@ -374,6 +508,38 @@ export function ReaderScreen({
           {reading?.chapterId ? `${chapterIndex + 1}/${book.chapters.length}` : 'New'}
         </Text>
       </View>
+
+      {listOpen ? (
+        <AnnotationList
+          annotations={annotations}
+          onClose={() => setListOpen(false)}
+          onEdit={(annotation) => {
+            setListOpen(false)
+            setSheet({ mode: 'edit', annotation })
+          }}
+          onOpen={(annotation) => {
+            void jumpTo(annotation).catch((caught: unknown) =>
+              setError(caught instanceof Error ? caught.message : 'That chapter could not open.')
+            )
+          }}
+        />
+      ) : null}
+      {sheet ? (
+        <AnnotationSheet
+          content={chapter.content}
+          target={sheet}
+          onClose={() => setSheet(null)}
+          onCreate={createAnnotation}
+          onRemove={async (annotation) => {
+            await repository.removeAnnotation(annotation.id)
+            await refreshAnnotations()
+          }}
+          onUpdate={async (annotation, changes) => {
+            await repository.updateAnnotation({ id: annotation.id, ...changes })
+            await refreshAnnotations()
+          }}
+        />
+      ) : null}
     </View>
   )
 }
@@ -433,6 +599,13 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
     fontSize: 18,
     fontWeight: '700'
+  },
+  controlHint: {
+    fontSize: 12,
+    textAlign: 'center'
+  },
+  noteMark: {
+    fontSize: 13
   },
   sizeValue: {
     minWidth: 48,
