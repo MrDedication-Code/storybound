@@ -1,9 +1,21 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-function describe(error: unknown): string {
+function describe(error: unknown, depth = 0): string {
   if (error instanceof Error) {
-    return `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ''}`
+    const text = `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ''}`
+    // Server and network failures are wrapped in a friendly error; keep the original locally.
+    const cause = (error as { cause?: unknown }).cause
+    return cause === undefined || depth >= 3
+      ? text
+      : `${text}\nCaused by: ${describe(cause, depth + 1)}`
+  }
+  if (error && typeof error === 'object') {
+    try {
+      return JSON.stringify(error).slice(0, 2000)
+    } catch {
+      return String(error)
+    }
   }
   return String(error)
 }
