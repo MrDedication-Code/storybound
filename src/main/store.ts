@@ -1038,7 +1038,10 @@ export class StoryboundStore {
     this.requireBook(bookId)
     const timestamp = now()
     this.database
-      .prepare('UPDATE books SET is_archived = 1, deleted_at = ?, updated_at = ? WHERE id = ?')
+      .prepare(
+        `UPDATE books SET is_archived = 1, deleted_at = ?, updated_at = ?,
+           row_version = row_version + 1 WHERE id = ?`
+      )
       .run(timestamp, timestamp, bookId)
   }
 
@@ -1046,7 +1049,10 @@ export class StoryboundStore {
     const bookId = idSchema.parse(id)
     this.requireBook(bookId)
     this.database
-      .prepare('UPDATE books SET is_archived = 0, deleted_at = NULL, updated_at = ? WHERE id = ?')
+      .prepare(
+        `UPDATE books SET is_archived = 0, deleted_at = NULL, updated_at = ?,
+           row_version = row_version + 1 WHERE id = ?`
+      )
       .run(now(), bookId)
   }
 

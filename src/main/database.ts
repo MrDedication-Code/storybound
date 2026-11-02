@@ -830,6 +830,15 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX sync_profiles_enabled_idx
       ON sync_profiles(enabled, updated_at);
     `
+  },
+  {
+    version: 11,
+    name: 'sync-trashed-books',
+    // Moving a book to or from Trash did not bump its row_version, so sync never sent it.
+    // Books already in Trash are marked changed once so other devices learn they are trashed.
+    sql: `
+      UPDATE books SET row_version = row_version + 1 WHERE deleted_at IS NOT NULL;
+    `
   }
 ]
 

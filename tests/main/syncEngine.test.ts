@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createStoryboundPaths, openStoryboundDatabase } from '../../src/main/database'
+import { StoryboundStore } from '../../src/main/store'
 import {
   applyLocalSyncEntity,
   DesktopSyncEngine,
@@ -172,6 +173,29 @@ describe('DesktopSyncEngine', () => {
     // A settled collection does not bounce changes back and forth.
     expect((await sourceEngine.run()).pushed).toBe(0)
     expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
+  it('sends a book moved to Trash, and restored from it, to other devices', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'storybound-sync-trash-'))
+    temporaryDirectories.push(directory)
+    const store = await StoryboundStore.open(directory)
+    const book = store.createBook({ title: 'Trash Me' })
+    const versionOf = (): number =>
+      store
+        .syncDatabase()
+        .prepare('SELECT row_version FROM books WHERE id = ?')
+        .pluck()
+        .get(book.id) as number
+    const before = versionOf()
+    store.trashBook(book.id)
+    expect(versionOf()).toBe(before + 1)
+    const trashed = listLocalSyncEntities(store.syncDatabase(), LIBRARY_ID).find(
+      (entity) => entity.entityId === book.id
+    )!
+    expect(trashed.deleted).toBe(true)
+    store.restoreBook(book.id)
+    expect(versionOf()).toBe(before + 2)
+    store.close()
   })
 
   it('files older book payloads into the profile library and waits for unknown libraries', async () => {
