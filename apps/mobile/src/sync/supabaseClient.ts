@@ -26,7 +26,7 @@ export function createStoryboundSupabaseClient(
     }
   })
 
-  const updateRefresh = (state: string): void => {
+  const updateRefresh = (state: string | null | undefined): void => {
     if (state === 'active') client.auth.startAutoRefresh()
     else client.auth.stopAutoRefresh()
   }

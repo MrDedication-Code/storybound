@@ -6,7 +6,7 @@ Storybound remains fully local unless the user explicitly signs in and enables s
 
 1. Install and start Docker Desktop.
 2. Run `npm run supabase:start`, then `npm run supabase:reset` and `npm run supabase:test`.
-3. Copy `.env.example` to `.env.local` and use the URL and publishable key printed by `npm run supabase:status`. This one file configures both clients: `electron.vite.config.ts` reads the `STORYBOUND_SUPABASE_*` lines at build time for desktop, and Expo reads the `EXPO_PUBLIC_STORYBOUND_SUPABASE_*` lines for mobile.
+3. Copy `.env.example` to `.env.local` and use the URL and publishable key printed by `npm run supabase:status`. `electron.vite.config.ts` reads its `STORYBOUND_SUPABASE_*` lines at build time for desktop. Expo only reads env files in the mobile app's own folder, so put the two `EXPO_PUBLIC_STORYBOUND_SUPABASE_*` lines in `apps/mobile/.env.local` as well (same values; both files are git-ignored).
 4. Run `npm run dev` for desktop or `npm run mobile:ios` / `npm run mobile:android` for Expo.
 
 `npm run dev`, `npm run build`, and `npm run package*` all bake the desktop values from `.env.local` into the built main process, so a packaged app carries its configured Supabase project with it. A `STORYBOUND_SUPABASE_URL`/`STORYBOUND_SUPABASE_PUBLISHABLE_KEY` exported in the shell environment is used instead whenever `.env.local` does not set them — useful for CI or for pointing an existing build at a different project without rebuilding.

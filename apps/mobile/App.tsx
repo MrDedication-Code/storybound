@@ -3,7 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BackHandler, SafeAreaView, StyleSheet, useColorScheme } from 'react-native'
 import { ErrorScreen, LoadingScreen } from './src/components/ScreenState'
 import { openMobileRepository, type OpenedMobileRepository } from './src/data/sqlite/openRepository'
-import type { MobileRepository, MobileRoute } from './src/domain/contracts'
+import {
+  DEFAULT_PREFERENCES,
+  type MobilePreferences,
+  type MobileRepository,
+  type MobileRoute
+} from './src/domain/contracts'
 import { BookDetailScreen } from './src/screens/BookDetailScreen'
 import { EditorScreen } from './src/screens/EditorScreen'
 import { LibraryScreen } from './src/screens/LibraryScreen'
@@ -94,6 +99,31 @@ function StoryboundApp({
   const [routes, setRoutes] = useState<MobileRoute[]>([{ name: 'library' }])
   const backOverrideRef = useRef<(() => void) | null>(null)
   const route = routes[routes.length - 1]
+  const [preferences, setPreferences] = useState<MobilePreferences | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void repository
+      .getPreferences()
+      .then((loaded) => {
+        if (active) setPreferences(loaded)
+      })
+      .catch(() => {
+        if (active) setPreferences(DEFAULT_PREFERENCES)
+      })
+    return () => {
+      active = false
+    }
+  }, [repository])
+
+  const changePreferences = useCallback(
+    (changes: Partial<MobilePreferences>): void => {
+      setPreferences((current) => (current ? { ...current, ...changes } : current))
+      // The choice applies immediately; if saving fails it simply isn't remembered next time.
+      void repository.savePreferences(changes).catch(() => undefined)
+    },
+    [repository]
+  )
 
   const push = useCallback((next: MobileRoute): void => {
     setRoutes((current) => [...current, next])
@@ -121,12 +151,22 @@ function StoryboundApp({
     return () => subscription.remove()
   }, [back, routes.length])
 
+  if (!preferences) return <LoadingScreen label="Opening your library…" />
+
+  // Reader mode passes no edit handler, so no screen can show an edit control or reach the editor.
+  const editChapter =
+    preferences.mode === 'editor'
+      ? (bookId: string) => (chapterId: string) => push({ name: 'editor', bookId, chapterId })
+      : () => undefined
+
   let screen: React.JSX.Element
   switch (route.name) {
     case 'library':
       screen = (
         <LibraryScreen
+          mode={preferences.mode}
           repository={repository}
+          onChangeMode={(mode) => changePreferences({ mode })}
           onOpenBook={(bookId) => push({ name: 'book', bookId })}
           onOpenSync={() => push({ name: 'sync-settings' })}
         />
@@ -138,7 +178,7 @@ function StoryboundApp({
           bookId={route.bookId}
           repository={repository}
           onBack={back}
-          onEditChapter={(chapterId) => push({ name: 'editor', bookId: route.bookId, chapterId })}
+          onEditChapter={editChapter(route.bookId)}
           onReadChapter={(chapterId) => push({ name: 'reader', bookId: route.bookId, chapterId })}
         />
       )
@@ -148,9 +188,11 @@ function StoryboundApp({
         <ReaderScreen
           bookId={route.bookId}
           initialChapterId={route.chapterId}
+          preferences={preferences}
           repository={repository}
           onBack={back}
-          onEditChapter={(chapterId) => push({ name: 'editor', bookId: route.bookId, chapterId })}
+          onChangePreferences={changePreferences}
+          onEditChapter={editChapter(route.bookId)}
         />
       )
       break

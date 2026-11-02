@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DATABASE_VERSION, migrateDatabase } from '../src/data/sqlite/migrations'
 import { createSQLiteRepository } from '../src/data/sqlite/sqliteRepository'
 import { NodeSqliteDatabase } from './helpers/nodeSqliteDatabase'
+import { insertSampleLibrary } from './helpers/sampleLibrary'
 
 describe('SQLite mobile repository', () => {
   let directory = ''
@@ -23,19 +24,64 @@ describe('SQLite mobile repository', () => {
     rmSync(directory, { force: true, recursive: true })
   })
 
-  it('migrates a blank database and seeds the first-run library once', async () => {
+  it('migrates a blank database into one empty library, with no sample books', async () => {
     await migrateDatabase(database!)
 
     const version = await database!.getFirstAsync<{ user_version: number }>('PRAGMA user_version')
     const repository = createSQLiteRepository(database!)
-    const books = await repository.listBooks()
 
     expect(version?.user_version).toBe(DATABASE_VERSION)
-    expect(books.map((book) => book.title)).toEqual(['The Lantern House', 'The Glass Orchard'])
+    await expect(repository.listBooks()).resolves.toEqual([])
+    await expect(
+      database!.getAllAsync<{ id: string }>('SELECT id FROM libraries')
+    ).resolves.toEqual([{ id: 'default-library' }])
     await expect(repository.getSyncStatus()).resolves.toMatchObject({ pendingLocalRecords: 0 })
 
     await migrateDatabase(database!)
-    await expect(repository.listBooks()).resolves.toHaveLength(2)
+    await expect(repository.listBooks()).resolves.toEqual([])
+  })
+
+  it('remembers reader mode, theme, and text size on this device across reopen', async () => {
+    await migrateDatabase(database!)
+    const repository = createSQLiteRepository(database!)
+
+    await expect(repository.getPreferences()).resolves.toEqual({
+      mode: 'reader',
+      readerTheme: 'sepia',
+      readerFontSize: 19
+    })
+    await repository.savePreferences({ mode: 'editor', readerTheme: 'night' })
+    await repository.savePreferences({ readerFontSize: 25 })
+
+    database!.close()
+    database = new NodeSqliteDatabase(databasePath)
+    await migrateDatabase(database)
+    await expect(createSQLiteRepository(database).getPreferences()).resolves.toEqual({
+      mode: 'editor',
+      readerTheme: 'night',
+      readerFontSize: 25
+    })
+    // Preferences are device-only: they never enter the sync change ledger.
+    await expect(createSQLiteRepository(database).getSyncStatus()).resolves.toMatchObject({
+      pendingLocalRecords: 0
+    })
+  })
+
+  it('ignores invalid preference values and keeps text size within range', async () => {
+    await migrateDatabase(database!)
+    const repository = createSQLiteRepository(database!)
+
+    await expect(
+      repository.savePreferences({
+        mode: 'admin' as never,
+        readerTheme: 'neon' as never,
+        readerFontSize: 400
+      })
+    ).resolves.toEqual({ mode: 'reader', readerTheme: 'sepia', readerFontSize: 31 })
+    await database!.runAsync(
+      "UPDATE app_preferences SET value = 'not json' WHERE key = 'readerFontSize'"
+    )
+    await expect(repository.getPreferences()).resolves.toMatchObject({ readerFontSize: 19 })
   })
 
   it('refuses to open a database created by a newer app version', async () => {
@@ -46,6 +92,7 @@ describe('SQLite mobile repository', () => {
 
   it('persists edits and reading progress across repository and database reopen', async () => {
     await migrateDatabase(database!)
+    await insertSampleLibrary(database!)
     const timestamp = new Date('2026-08-06T12:34:56.000Z')
     const repository = createSQLiteRepository(database!, () => timestamp)
 
@@ -84,6 +131,7 @@ describe('SQLite mobile repository', () => {
 
   it('rolls back a chapter edit when its change-ledger write fails', async () => {
     await migrateDatabase(database!)
+    await insertSampleLibrary(database!)
     await database!.execAsync(`
       CREATE TRIGGER reject_chapter_change
       BEFORE INSERT ON change_records
@@ -104,6 +152,7 @@ describe('SQLite mobile repository', () => {
 
   it('rejects reading state that crosses book boundaries without writing changes', async () => {
     await migrateDatabase(database!)
+    await insertSampleLibrary(database!)
     const repository = createSQLiteRepository(database!)
 
     await expect(

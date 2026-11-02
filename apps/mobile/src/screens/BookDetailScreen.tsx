@@ -19,7 +19,8 @@ export function BookDetailScreen({
   repository: MobileRepository
   onBack: () => void
   onReadChapter: (chapterId: string) => void
-  onEditChapter: (chapterId: string) => void
+  /** Omitted in reader mode, which hides every edit control. */
+  onEditChapter?: (chapterId: string) => void
 }): React.JSX.Element {
   const [book, setBook] = useState<BookDetail | null>(null)
   const [reading, setReading] = useState<ReadingState | null>(null)
@@ -112,15 +113,17 @@ export function BookDetailScreen({
                   </Text>
                 </View>
               </Pressable>
-              <Pressable
-                accessibilityLabel={`Edit ${chapter.title}`}
-                accessibilityRole="button"
-                hitSlop={8}
-                style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
-                onPress={() => onEditChapter(chapter.id)}
-              >
-                <Text style={styles.editLabel}>Edit</Text>
-              </Pressable>
+              {onEditChapter ? (
+                <Pressable
+                  accessibilityLabel={`Edit ${chapter.title}`}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+                  onPress={() => onEditChapter(chapter.id)}
+                >
+                  <Text style={styles.editLabel}>Edit</Text>
+                </Pressable>
+              ) : null}
             </View>
           ))}
         </View>

@@ -4,10 +4,16 @@ import type {
   Chapter,
   ChapterSummary,
   LocalSyncStatus,
+  MobilePreferences,
   MobileRepository,
   ReadingState,
   SaveReadingStateInput,
   UpdateChapterInput
+} from '../../domain/contracts'
+import {
+  DEFAULT_PREFERENCES,
+  READER_FONT_SIZE_MAX,
+  READER_FONT_SIZE_MIN
 } from '../../domain/contracts'
 import { clamp } from '../../domain/reading'
 import {
@@ -157,11 +163,49 @@ async function recordChange(
   )
 }
 
+/** Drops anything unrecognised, so a damaged value can only fall back to the default. */
+function sanitizePreferences(
+  values: Partial<Record<keyof MobilePreferences, unknown>>
+): Partial<MobilePreferences> {
+  const clean: Partial<MobilePreferences> = {}
+  if (values.mode === 'reader' || values.mode === 'editor') clean.mode = values.mode
+  if (
+    values.readerTheme === 'paper' ||
+    values.readerTheme === 'sepia' ||
+    values.readerTheme === 'night'
+  ) {
+    clean.readerTheme = values.readerTheme
+  }
+  if (typeof values.readerFontSize === 'number' && Number.isFinite(values.readerFontSize)) {
+    clean.readerFontSize = clamp(
+      Math.round(values.readerFontSize),
+      READER_FONT_SIZE_MIN,
+      READER_FONT_SIZE_MAX
+    )
+  }
+  return clean
+}
+
 export function createSQLiteRepository(
   database: SqlDatabasePort,
   now: () => Date = () => new Date(),
   writes: SqlWriteCoordinator = createSqlWriteCoordinator()
 ): MobileRepository {
+  async function readPreferences(): Promise<MobilePreferences> {
+    const rows = await database.getAllAsync<{ key: string; value: string }>(
+      'SELECT key, value FROM app_preferences'
+    )
+    const stored: Partial<Record<keyof MobilePreferences, unknown>> = {}
+    for (const row of rows) {
+      try {
+        stored[row.key as keyof MobilePreferences] = JSON.parse(row.value)
+      } catch {
+        // An unreadable value simply falls back to its default.
+      }
+    }
+    return { ...DEFAULT_PREFERENCES, ...sanitizePreferences(stored) }
+  }
+
   return {
     async listBooks(): Promise<BookSummary[]> {
       const rows = await database.getAllAsync<BookRow>(
@@ -325,6 +369,25 @@ export function createSQLiteRepository(
         pendingLocalRecords: row?.pending_count ?? 0,
         lastSyncAt: null
       }
+    },
+
+    getPreferences: readPreferences,
+
+    savePreferences(changes: Partial<MobilePreferences>): Promise<MobilePreferences> {
+      return writes.run(async () => {
+        const clean = sanitizePreferences(changes)
+        const updatedAt = now().toISOString()
+        await database.transactionAsync(async (transaction) => {
+          for (const [key, value] of Object.entries(clean)) {
+            await transaction.runAsync(
+              `INSERT INTO app_preferences (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+              [key, JSON.stringify(value), updatedAt]
+            )
+          }
+        })
+        return readPreferences()
+      })
     }
   }
 }

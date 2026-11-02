@@ -7,6 +7,7 @@ import { migrateDatabase } from '../src/data/sqlite/migrations'
 import { createSQLiteRepository } from '../src/data/sqlite/sqliteRepository'
 import { SQLiteSyncStore, type DecryptedRemoteChange } from '../src/data/sqlite/sqliteSyncStore'
 import { NodeSqliteDatabase } from './helpers/nodeSqliteDatabase'
+import { insertSampleLibrary } from './helpers/sampleLibrary'
 
 const vaultId = '11111111-1111-4111-8111-111111111111'
 const deviceId = '22222222-2222-4222-8222-222222222222'
@@ -30,6 +31,7 @@ describe('SQLite encrypted sync store', () => {
     directory = mkdtempSync(join(tmpdir(), 'storybound-mobile-sync-'))
     database = new NodeSqliteDatabase(join(directory, 'library.db'))
     await migrateDatabase(database)
+    await insertSampleLibrary(database)
     const writes = createSqlWriteCoordinator()
     syncStore = new SQLiteSyncStore(database, writes, () => new Date('2026-08-06T12:00:00Z'))
     nextMutation = 0

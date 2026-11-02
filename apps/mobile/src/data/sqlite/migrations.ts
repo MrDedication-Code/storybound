@@ -1,8 +1,8 @@
 import type { SqlDatabasePort } from './databasePort'
-import { seedBooks, seedChapters, seedLibrary, seedReadingState } from './seedData'
+import { seedLibrary } from './seedData'
 
 export const DATABASE_NAME = 'storybound.db'
-export const DATABASE_VERSION = 2
+export const DATABASE_VERSION = 3
 
 const schemaVersionOne = `
 CREATE TABLE IF NOT EXISTS libraries (
@@ -153,66 +153,19 @@ CREATE TABLE sync_conflicts (
 );
 `
 
-async function seedFirstRun(transaction: SqlDatabasePort): Promise<void> {
+const schemaVersionThree = `
+CREATE TABLE app_preferences (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`
+
+async function createFirstLibrary(transaction: SqlDatabasePort): Promise<void> {
   await transaction.runAsync(
     `INSERT OR IGNORE INTO libraries (id, name, created_at, updated_at)
      VALUES (?, ?, ?, ?)`,
     [seedLibrary.id, seedLibrary.name, seedLibrary.createdAt, seedLibrary.updatedAt]
-  )
-
-  for (const book of seedBooks) {
-    await transaction.runAsync(
-      `INSERT OR IGNORE INTO books (
-        id, library_id, title, subtitle, author_name, blurb, status, cover_tone,
-        position, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        book.id,
-        book.libraryId,
-        book.title,
-        book.subtitle,
-        book.authorName,
-        book.blurb,
-        book.status,
-        book.coverTone,
-        book.position,
-        book.createdAt,
-        book.updatedAt
-      ]
-    )
-  }
-
-  for (const chapter of seedChapters) {
-    await transaction.runAsync(
-      `INSERT OR IGNORE INTO chapters (
-        id, book_id, title, content, position, word_count, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        chapter.id,
-        chapter.bookId,
-        chapter.title,
-        chapter.content,
-        chapter.position,
-        chapter.wordCount,
-        chapter.updatedAt
-      ]
-    )
-  }
-
-  await transaction.runAsync(
-    `INSERT OR IGNORE INTO reading_states (
-      book_id, chapter_id, scroll_position, progress_percentage, reader_theme,
-      font_size, last_read_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      seedReadingState.bookId,
-      seedReadingState.chapterId,
-      seedReadingState.scrollPosition,
-      seedReadingState.progressPercentage,
-      seedReadingState.readerTheme,
-      seedReadingState.fontSize,
-      seedReadingState.lastReadAt
-    ]
   )
 }
 
@@ -235,13 +188,18 @@ export async function migrateDatabase(database: SqlDatabasePort): Promise<void> 
 
     if (currentVersion < 1) {
       await transaction.execAsync(schemaVersionOne)
-      await seedFirstRun(transaction)
+      await createFirstLibrary(transaction)
       await transaction.execAsync('PRAGMA user_version = 1')
     }
 
     if (currentVersion < 2) {
       await transaction.execAsync(schemaVersionTwo)
       await transaction.execAsync('PRAGMA user_version = 2')
+    }
+
+    if (currentVersion < 3) {
+      await transaction.execAsync(schemaVersionThree)
+      await transaction.execAsync('PRAGMA user_version = 3')
     }
   })
 }

@@ -7,17 +7,21 @@ import {
   View,
   type LayoutChangeEvent,
   type NativeScrollEvent,
-  type NativeSyntheticEvent
+  type NativeSyntheticEvent,
+  type ScrollViewInstance
 } from 'react-native'
 import { AppHeader } from '../components/AppHeader'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
-import type {
-  BookDetail,
-  Chapter,
-  MobileRepository,
-  ReaderTheme,
-  ReadingState
+import {
+  READER_FONT_SIZE_MAX,
+  READER_FONT_SIZE_MIN,
+  type BookDetail,
+  type Chapter,
+  type MobilePreferences,
+  type MobileRepository,
+  type ReaderTheme,
+  type ReadingState
 } from '../domain/contracts'
 import { calculateReadingProgress, parseStoryBlocks } from '../domain/reading'
 import { storyboundColors } from '../theme'
@@ -50,24 +54,42 @@ export function ReaderScreen({
   bookId,
   initialChapterId,
   repository,
+  preferences,
   onBack,
-  onEditChapter
+  onEditChapter,
+  onChangePreferences
 }: {
   bookId: string
   initialChapterId?: string
   repository: MobileRepository
+  preferences: Pick<MobilePreferences, 'readerTheme' | 'readerFontSize'>
   onBack: () => void
-  onEditChapter: (chapterId: string) => void
+  /** Omitted in reader mode, which hides every edit control. */
+  onEditChapter?: (chapterId: string) => void
+  onChangePreferences: (changes: Partial<MobilePreferences>) => void
 }): React.JSX.Element {
   const [book, setBook] = useState<BookDetail | null>(null)
   const [chapter, setChapter] = useState<Chapter | null>(null)
   const [reading, setReading] = useState<ReadingState | null>(null)
-  const [theme, setTheme] = useState<ReaderTheme>('sepia')
-  const [fontSize, setFontSize] = useState(19)
+  const [theme, setThemeState] = useState<ReaderTheme>(preferences.readerTheme)
+  const [fontSize, setFontSizeState] = useState(preferences.readerFontSize)
+
+  const setTheme = (readerTheme: ReaderTheme): void => {
+    setThemeState(readerTheme)
+    onChangePreferences({ readerTheme })
+  }
+  const changeFontSize = (delta: number): void => {
+    const readerFontSize = Math.min(
+      READER_FONT_SIZE_MAX,
+      Math.max(READER_FONT_SIZE_MIN, fontSize + delta)
+    )
+    setFontSizeState(readerFontSize)
+    onChangePreferences({ readerFontSize })
+  }
   const [controlsOpen, setControlsOpen] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
-  const scrollRef = useRef<ScrollView>(null)
+  const scrollRef = useRef<ScrollViewInstance>(null)
   const viewportHeightRef = useRef(0)
   const contentHeightRef = useRef(0)
   const positionRef = useRef(0)
@@ -218,9 +240,9 @@ export function ReaderScreen({
             <Pressable
               accessibilityLabel="Make text smaller"
               accessibilityRole="button"
-              disabled={fontSize <= 15}
+              disabled={fontSize <= READER_FONT_SIZE_MIN}
               style={styles.sizeButton}
-              onPress={() => setFontSize((value) => Math.max(15, value - 2))}
+              onPress={() => changeFontSize(-2)}
             >
               <Text style={[styles.sizeLabel, { color: palette.foreground }]}>A−</Text>
             </Pressable>
@@ -228,9 +250,9 @@ export function ReaderScreen({
             <Pressable
               accessibilityLabel="Make text larger"
               accessibilityRole="button"
-              disabled={fontSize >= 31}
+              disabled={fontSize >= READER_FONT_SIZE_MAX}
               style={styles.sizeButton}
-              onPress={() => setFontSize((value) => Math.min(31, value + 2))}
+              onPress={() => changeFontSize(2)}
             >
               <Text style={[styles.sizeLabel, { color: palette.foreground }]}>A+</Text>
             </Pressable>
@@ -310,11 +332,13 @@ export function ReaderScreen({
         </View>
 
         <View style={[styles.chapterActions, { borderTopColor: palette.line }]}>
-          <PrimaryButton
-            label="Edit chapter"
-            variant="quiet"
-            onPress={() => onEditChapter(chapter.id)}
-          />
+          {onEditChapter ? (
+            <PrimaryButton
+              label="Edit chapter"
+              variant="quiet"
+              onPress={() => onEditChapter(chapter.id)}
+            />
+          ) : null}
           <View style={styles.chapterNavigation}>
             <PrimaryButton
               disabled={!previous}

@@ -2,16 +2,25 @@ import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { BookArtwork } from '../components/BookArtwork'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
-import type { BookSummary, MobileRepository } from '../domain/contracts'
+import type { AppMode, BookSummary, MobileRepository } from '../domain/contracts'
 import { estimateReadingMinutes, formatCompactNumber } from '../domain/reading'
 import { compactCaps, literaryHeading, storyboundColors, storyboundRadii } from '../theme'
 
+const MODES: ReadonlyArray<{ value: AppMode; label: string; hint: string }> = [
+  { value: 'reader', label: 'Reader', hint: 'Just reading. Editing controls are hidden.' },
+  { value: 'editor', label: 'Editor', hint: 'Reading plus chapter editing.' }
+]
+
 export function LibraryScreen({
   repository,
+  mode,
+  onChangeMode,
   onOpenBook,
   onOpenSync
 }: {
   repository: MobileRepository
+  mode: AppMode
+  onChangeMode: (mode: AppMode) => void
   onOpenBook: (bookId: string) => void
   onOpenSync: () => void
 }): React.JSX.Element {
@@ -57,7 +66,7 @@ export function LibraryScreen({
       <View style={styles.topbar}>
         <View>
           <Text style={styles.wordmark}>Storybound</Text>
-          <Text style={styles.localLabel}>Offline mobile preview</Text>
+          <Text style={styles.localLabel}>{mode === 'reader' ? 'Reader mode' : 'Editor mode'}</Text>
         </View>
         <Pressable
           accessibilityLabel="Open sync settings"
@@ -68,6 +77,31 @@ export function LibraryScreen({
         >
           <Text style={styles.syncGlyph}>◎</Text>
         </Pressable>
+      </View>
+
+      <View accessibilityRole="radiogroup" style={styles.modeSwitch}>
+        {MODES.map((option) => {
+          const selected = option.value === mode
+          return (
+            <Pressable
+              accessibilityHint={option.hint}
+              accessibilityLabel={`${option.label} mode`}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              key={option.value}
+              style={({ pressed }) => [
+                styles.modeOption,
+                selected && styles.modeOptionSelected,
+                pressed && styles.pressed
+              ]}
+              onPress={() => onChangeMode(option.value)}
+            >
+              <Text style={[styles.modeLabel, selected && styles.modeLabelSelected]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          )
+        })}
       </View>
 
       <TextInput
@@ -213,6 +247,33 @@ const styles = StyleSheet.create({
   syncGlyph: {
     color: storyboundColors.walnut,
     fontSize: 26
+  },
+  modeSwitch: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    padding: 4,
+    borderColor: storyboundColors.line,
+    borderRadius: storyboundRadii.medium,
+    borderWidth: 1,
+    backgroundColor: storyboundColors.paperRaised
+  },
+  modeOption: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: storyboundRadii.medium - 4
+  },
+  modeOptionSelected: {
+    backgroundColor: storyboundColors.walnut
+  },
+  modeLabel: {
+    color: storyboundColors.muted,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  modeLabelSelected: {
+    color: storyboundColors.paperRaised
   },
   search: {
     minHeight: 50,

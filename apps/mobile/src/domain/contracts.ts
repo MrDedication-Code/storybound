@@ -60,6 +60,25 @@ export interface LocalSyncStatus {
   lastSyncAt: null
 }
 
+/** Reader mode hides every editing control; editor mode adds them back. */
+export type AppMode = 'reader' | 'editor'
+
+/** Device-only preferences: they are not part of the library and never sync. */
+export interface MobilePreferences {
+  mode: AppMode
+  readerTheme: ReaderTheme
+  readerFontSize: number
+}
+
+export const READER_FONT_SIZE_MIN = 15
+export const READER_FONT_SIZE_MAX = 31
+
+export const DEFAULT_PREFERENCES: MobilePreferences = {
+  mode: 'reader',
+  readerTheme: 'sepia',
+  readerFontSize: 19
+}
+
 export interface MobileRepository {
   listBooks(): Promise<BookSummary[]>
   getBook(bookId: string): Promise<BookDetail>
@@ -68,6 +87,8 @@ export interface MobileRepository {
   getReadingState(bookId: string): Promise<ReadingState>
   saveReadingState(input: SaveReadingStateInput): Promise<ReadingState>
   getSyncStatus(): Promise<LocalSyncStatus>
+  getPreferences(): Promise<MobilePreferences>
+  savePreferences(changes: Partial<MobilePreferences>): Promise<MobilePreferences>
 }
 
 export type MobileRoute =

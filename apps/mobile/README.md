@@ -22,7 +22,7 @@ npx expo-doctor --verbose
 
 ## Optional encrypted sync
 
-Copy `.env.example` to `.env` and provide the Storybound Supabase project values:
+Copy `.env.example` to `.env.local` in this directory (Expo does not read the repository root's env files) and provide the Storybound Supabase project values:
 
 ```sh
 EXPO_PUBLIC_STORYBOUND_SUPABASE_URL=https://your-project.supabase.co
