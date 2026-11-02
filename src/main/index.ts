@@ -69,7 +69,8 @@ async function runBackgroundSync(): Promise<void> {
   if (!syncController || isQuitting) return
   try {
     const status = await syncController.status()
-    if (status.phase === 'idle') await syncController.syncNow()
+    // Retry after a failed run too; otherwise one transient error stops background sync for good.
+    if (status.phase === 'idle' || status.phase === 'error') await syncController.syncNow()
   } catch (error) {
     logger?.error('background-sync', error)
   }

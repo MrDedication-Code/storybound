@@ -206,9 +206,11 @@ export function SettingsPage({
   }
 
   // While this page is open with sync unlocked, watch for new devices asking to join.
+  // Linking needs only an unlocked device, so keep listening even while sync reports an error.
   const syncPhase = syncStatus?.phase
+  const canApproveDevices = syncPhase === 'idle' || syncPhase === 'error'
   useEffect(() => {
-    if (syncPhase !== 'idle') return
+    if (!canApproveDevices) return
     let active = true
     const poll = async (): Promise<void> => {
       try {
@@ -225,7 +227,7 @@ export function SettingsPage({
       window.clearInterval(timer)
       setLinkRequests([])
     }
-  }, [syncPhase])
+  }, [canApproveDevices])
 
   const refreshSync = async (): Promise<void> => {
     const status = unwrap(await storyboundApi().sync.status())
@@ -752,6 +754,15 @@ export function SettingsPage({
                     Sign out
                   </Button>
                 </div>
+                {linkRequests.length === 0 ? (
+                  <p className="link-request__hint">
+                    <Smartphone aria-hidden="true" size={15} />
+                    <span>
+                      <strong>Add a phone:</strong> sign in on it, tap “Link to my Mac”, and the
+                      request appears here with six words to compare. No recovery code needed.
+                    </span>
+                  </p>
+                ) : null}
                 {linkRequests.map((request) => (
                   <div className="link-request" key={request.id} role="alert">
                     <div className="link-request__heading">

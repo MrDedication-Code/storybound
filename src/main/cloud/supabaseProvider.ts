@@ -51,7 +51,8 @@ const pullResultSchema = z.object({
       entityId: z.string().min(1).max(240),
       operation: z.enum(['upsert', 'delete']),
       remoteRevision: z.string().min(1),
-      changedAt: z.iso.datetime(),
+      // Postgres serialises timestamptz with a numeric offset (+00:00), not a trailing Z.
+      changedAt: z.iso.datetime({ offset: true }),
       payload: encryptedPayloadSchema
     })
   ),

@@ -88,7 +88,8 @@ describe('SupabaseSyncProvider', () => {
             entityId: 'chapter-a',
             operation: 'upsert',
             remoteRevision: '8',
-            changedAt: '2026-08-06T20:00:00.000Z',
+            // The exact form Postgres sends for timestamptz inside jsonb.
+            changedAt: '2026-08-06T20:00:00.123+00:00',
             payload: {
               ciphertext: Buffer.from('cipher').toString('base64'),
               nonce: Buffer.from('0123456789ab').toString('base64'),

@@ -37,7 +37,7 @@ export const syncRemoteBatchSchema = z.object({
   nonce: boundedBase64.max(64),
   ciphertext: boundedBase64,
   ciphertextHash: boundedBase64.max(128),
-  createdAt: z.iso.datetime()
+  createdAt: z.iso.datetime({ offset: true })
 })
 
 export const syncPullResultSchema = z.object({
