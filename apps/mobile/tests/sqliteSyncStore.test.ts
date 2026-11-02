@@ -452,6 +452,101 @@ describe('SQLite encrypted sync store', () => {
     await expect(repository.listAnnotations('lantern-house')).resolves.toEqual([])
   })
 
+  it('receives bookmarks, and sends ones made, edited, or deleted here', async () => {
+    const writes = createSqlWriteCoordinator()
+    let nextId = 0
+    const repository = createSQLiteRepository(
+      database!,
+      () => new Date('2026-08-06T12:05:00Z'),
+      writes,
+      () => `mark-${(nextId += 1)}`
+    )
+    syncStore = new SQLiteSyncStore(database!, writes, () => new Date('2026-08-06T12:06:00Z'))
+    await syncStore.activateProfile(vaultId, deviceId)
+    const remote = (
+      operation: 'upsert' | 'delete',
+      revision: string,
+      value: Record<string, unknown>
+    ): DecryptedRemoteChange => ({
+      mutationId: `${revision.padStart(8, '0')}-7777-4777-8777-777777777777`,
+      deviceId: remoteDeviceId,
+      entityType: 'bookmark',
+      entityId: 'desk-mark',
+      operation,
+      remoteRevision: revision,
+      changedAt: '2026-08-06T12:00:00Z',
+      payload: encryptedPayload,
+      value
+    })
+    await syncStore.applyPullPage(null, '1', deviceId, [
+      remote('upsert', '1', {
+        id: 'desk-mark',
+        book_id: 'lantern-house',
+        chapter_id: 'lantern-1',
+        anchor_id: 'desk-mark',
+        location: 0.5,
+        label: 'Halfway',
+        note: '',
+        color: 'gold',
+        start_offset: null,
+        end_offset: null,
+        fallback_location: 0.5,
+        quote: '',
+        prefix: '',
+        suffix: '',
+        content_hash: '',
+        resolution_status: 'approximate',
+        created_at: '2026-08-06T11:00:00Z',
+        updated_at: '2026-08-06T11:00:00Z',
+        deleted_at: null,
+        row_version: 2
+      })
+    ])
+    await expect(repository.listBookmarks('lantern-house')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'desk-mark',
+        chapterTitle: 'The Light on Blackwater Point',
+        location: 0.5,
+        label: 'Halfway'
+      })
+    ])
+    await expect(syncStore.claimPendingChanges(createMutationId)).resolves.toEqual([])
+
+    const created = await repository.createBookmark({
+      bookId: 'lantern-house',
+      chapterId: 'lantern-1',
+      location: 1.4,
+      label: '  The visitor  ',
+      note: '',
+      color: 'purple'
+    })
+    expect(created).toMatchObject({ location: 1, label: 'The visitor', color: 'purple' })
+    await repository.updateBookmark({
+      id: created.id,
+      label: 'The visitor',
+      note: 'Come back here.',
+      color: 'purple'
+    })
+    const [sent] = await syncStore.claimPendingChanges(createMutationId)
+    expect(sent).toMatchObject({ entityType: 'bookmark', entityId: 'mark-1', rowVersion: 3 })
+    expect(sent.value).toMatchObject({
+      anchor_id: 'mark-2',
+      location: 1,
+      fallback_location: 1,
+      note: 'Come back here.',
+      row_version: 3
+    })
+
+    await repository.removeBookmark(created.id)
+    const [removal] = await syncStore.claimPendingChanges(createMutationId)
+    expect(removal).toMatchObject({ operation: 'delete', rowVersion: 4 })
+
+    await syncStore.applyPullPage('1', '2', deviceId, [
+      remote('delete', '2', { deletedAt: '2026-08-06T12:10:00Z', rowVersion: 3 })
+    ])
+    await expect(repository.listBookmarks('lantern-house')).resolves.toEqual([])
+  })
+
   it('records a pull conflict and excludes that entity from future push claims', async () => {
     const writes = createSqlWriteCoordinator()
     const repository = createSQLiteRepository(

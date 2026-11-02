@@ -1,10 +1,12 @@
 import type {
   Annotation,
   BookDetail,
+  Bookmark,
   BookSummary,
   Chapter,
   ChapterSummary,
   CreateAnnotationInput,
+  CreateBookmarkInput,
   LibrarySummary,
   LocalSyncStatus,
   MobilePreferences,
@@ -12,6 +14,7 @@ import type {
   ReadingState,
   SaveReadingStateInput,
   UpdateAnnotationInput,
+  UpdateBookmarkInput,
   UpdateChapterInput
 } from '../../domain/contracts'
 import {
@@ -187,6 +190,45 @@ function mapAnnotation(row: AnnotationRow): Annotation {
   }
 }
 
+interface BookmarkRow {
+  id: string
+  book_id: string
+  chapter_id: string
+  chapter_title: string
+  location: number
+  label: string
+  note: string
+  color: string
+  created_at: string
+  updated_at: string
+  row_version: number
+}
+
+const bookmarkQuery = `
+  SELECT m.id, m.book_id, m.chapter_id, c.title AS chapter_title, m.location, m.label, m.note,
+    m.color, m.created_at, m.updated_at, m.row_version
+  FROM bookmarks m
+  JOIN chapters c ON c.id = m.chapter_id AND c.deleted_at IS NULL
+  JOIN books b ON b.id = m.book_id AND b.deleted_at IS NULL
+`
+
+function mapBookmark(row: BookmarkRow): Bookmark {
+  return {
+    id: row.id,
+    bookId: row.book_id,
+    chapterId: row.chapter_id,
+    chapterTitle: row.chapter_title,
+    location: row.location,
+    label: row.label,
+    note: row.note,
+    color: row.color,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
+const MAX_BOOKMARK_LABEL = 240
+const MAX_BOOKMARK_NOTE = 10_000
 const MAX_NOTE_LENGTH = 100_000
 // How much text either side of a highlight is saved to find it again after edits.
 const ANCHOR_CONTEXT = 128
@@ -202,7 +244,7 @@ async function getBookSummary(database: SqlDatabasePort, bookId: string): Promis
 
 async function recordChange(
   transaction: SqlDatabasePort,
-  entityType: 'chapter' | 'reading_state' | 'annotation',
+  entityType: 'chapter' | 'reading_state' | 'annotation' | 'bookmark',
   entityId: string,
   changedAt: string,
   rowVersion: number,
@@ -571,6 +613,127 @@ export function createSQLiteRepository(
           await recordChange(
             transaction,
             'annotation',
+            id,
+            deletedAt,
+            existing.row_version + 1,
+            'delete'
+          )
+        })
+      })
+    },
+
+    async listBookmarks(bookId: string): Promise<Bookmark[]> {
+      const rows = await database.getAllAsync<BookmarkRow>(
+        `${bookmarkQuery}
+         WHERE m.book_id = ? AND m.deleted_at IS NULL
+         ORDER BY c.position, m.location, m.created_at`,
+        [bookId]
+      )
+      return rows.map(mapBookmark)
+    },
+
+    createBookmark(input: CreateBookmarkInput): Promise<Bookmark> {
+      return writes.run(async () => {
+        const label = input.label.trim()
+        const note = input.note.trim()
+        if (label.length > MAX_BOOKMARK_LABEL) throw new Error('That bookmark name is too long.')
+        if (note.length > MAX_BOOKMARK_NOTE) throw new Error('That bookmark note is too long.')
+        const location = clamp(input.location, 0, 1)
+        const createdAt = now().toISOString()
+        const id = createId()
+        let created: Bookmark | null = null
+        await database.transactionAsync(async (transaction) => {
+          const chapter = await transaction.getFirstAsync<{ id: string }>(
+            `SELECT c.id FROM chapters c
+             JOIN books b ON b.id = c.book_id AND b.deleted_at IS NULL
+             WHERE c.id = ? AND c.book_id = ? AND c.deleted_at IS NULL`,
+            [input.chapterId, input.bookId]
+          )
+          if (!chapter) throw new Error('That chapter does not belong to this book.')
+          // A new record starts at 2: the desktop counts a bookmark and its anchor separately.
+          const rowVersion = 2
+          await transaction.runAsync(
+            `INSERT INTO bookmarks (
+               id, book_id, chapter_id, anchor_id, location, label, note, color,
+               fallback_location, created_at, updated_at, deleted_at, row_version
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+            [
+              id,
+              input.bookId,
+              input.chapterId,
+              createId(),
+              location,
+              label,
+              note,
+              input.color.trim().slice(0, 40) || 'gold',
+              location,
+              createdAt,
+              createdAt,
+              rowVersion
+            ]
+          )
+          await recordChange(transaction, 'bookmark', id, createdAt, rowVersion)
+          const row = await transaction.getFirstAsync<BookmarkRow>(
+            `${bookmarkQuery} WHERE m.id = ?`,
+            [id]
+          )
+          if (row) created = mapBookmark(row)
+        })
+        if (!created) throw new Error('The bookmark did not save.')
+        return created
+      })
+    },
+
+    updateBookmark(input: UpdateBookmarkInput): Promise<Bookmark> {
+      return writes.run(async () => {
+        const label = input.label.trim()
+        const note = input.note.trim()
+        if (label.length > MAX_BOOKMARK_LABEL) throw new Error('That bookmark name is too long.')
+        if (note.length > MAX_BOOKMARK_NOTE) throw new Error('That bookmark note is too long.')
+        const updatedAt = now().toISOString()
+        let updated: Bookmark | null = null
+        await database.transactionAsync(async (transaction) => {
+          const existing = await transaction.getFirstAsync<BookmarkRow>(
+            `${bookmarkQuery} WHERE m.id = ? AND m.deleted_at IS NULL`,
+            [input.id]
+          )
+          if (!existing) throw new Error('That bookmark could not be found.')
+          await transaction.runAsync(
+            `UPDATE bookmarks
+             SET label = ?, note = ?, color = ?, updated_at = ?, row_version = row_version + 1
+             WHERE id = ?`,
+            [label, note, input.color.trim().slice(0, 40) || existing.color, updatedAt, input.id]
+          )
+          await recordChange(transaction, 'bookmark', input.id, updatedAt, existing.row_version + 1)
+          const row = await transaction.getFirstAsync<BookmarkRow>(
+            `${bookmarkQuery} WHERE m.id = ?`,
+            [input.id]
+          )
+          if (row) updated = mapBookmark(row)
+        })
+        if (!updated) throw new Error('The bookmark did not save.')
+        return updated
+      })
+    },
+
+    removeBookmark(id: string): Promise<void> {
+      return writes.run(async () => {
+        const deletedAt = now().toISOString()
+        await database.transactionAsync(async (transaction) => {
+          const existing = await transaction.getFirstAsync<{ row_version: number }>(
+            'SELECT row_version FROM bookmarks WHERE id = ? AND deleted_at IS NULL',
+            [id]
+          )
+          if (!existing) throw new Error('That bookmark could not be found.')
+          await transaction.runAsync(
+            `UPDATE bookmarks
+             SET deleted_at = ?, updated_at = ?, row_version = row_version + 1
+             WHERE id = ?`,
+            [deletedAt, deletedAt, id]
+          )
+          await recordChange(
+            transaction,
+            'bookmark',
             id,
             deletedAt,
             existing.row_version + 1,

@@ -2,7 +2,7 @@ import type { SqlDatabasePort } from './databasePort'
 import { seedLibrary } from './seedData'
 
 export const DATABASE_NAME = 'storybound.db'
-export const DATABASE_VERSION = 5
+export const DATABASE_VERSION = 6
 
 const schemaVersionOne = `
 CREATE TABLE IF NOT EXISTS libraries (
@@ -215,6 +215,51 @@ INSERT INTO change_records SELECT * FROM change_records_v2;
 DROP TABLE change_records_v2;
 `
 
+// Bookmarks keep their place as a position through the chapter, like the desktop, plus the
+// desktop's anchor fields so they round-trip unchanged.
+const schemaVersionSix = `
+CREATE TABLE bookmarks (
+  id TEXT PRIMARY KEY NOT NULL,
+  book_id TEXT NOT NULL,
+  chapter_id TEXT NOT NULL,
+  anchor_id TEXT NOT NULL,
+  location REAL NOT NULL CHECK (location BETWEEN 0 AND 1),
+  label TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT 'gold',
+  start_offset INTEGER,
+  end_offset INTEGER,
+  fallback_location REAL NOT NULL DEFAULT 0 CHECK (fallback_location BETWEEN 0 AND 1),
+  quote TEXT NOT NULL DEFAULT '',
+  prefix TEXT NOT NULL DEFAULT '',
+  suffix TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  resolution_status TEXT NOT NULL DEFAULT 'approximate',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  row_version INTEGER NOT NULL CHECK (row_version >= 1)
+);
+CREATE INDEX bookmarks_book_idx ON bookmarks (book_id, deleted_at);
+
+-- Rebuilt so pending changes can include bookmarks.
+ALTER TABLE change_records RENAME TO change_records_v3;
+CREATE TABLE change_records (
+  entity_type TEXT NOT NULL CHECK (
+    entity_type IN ('library', 'book', 'chapter', 'reading-state', 'annotation', 'bookmark')
+  ),
+  entity_id TEXT NOT NULL,
+  operation TEXT NOT NULL DEFAULT 'upsert' CHECK (operation IN ('upsert', 'delete')),
+  changed_at TEXT NOT NULL,
+  row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+  base_remote_revision TEXT,
+  mutation_id TEXT,
+  PRIMARY KEY (entity_type, entity_id)
+);
+INSERT INTO change_records SELECT * FROM change_records_v3;
+DROP TABLE change_records_v3;
+`
+
 async function createFirstLibrary(transaction: SqlDatabasePort): Promise<void> {
   await transaction.runAsync(
     `INSERT OR IGNORE INTO libraries (id, name, created_at, updated_at)
@@ -264,6 +309,11 @@ export async function migrateDatabase(database: SqlDatabasePort): Promise<void> 
     if (currentVersion < 5) {
       await transaction.execAsync(schemaVersionFive)
       await transaction.execAsync('PRAGMA user_version = 5')
+    }
+
+    if (currentVersion < 6) {
+      await transaction.execAsync(schemaVersionSix)
+      await transaction.execAsync('PRAGMA user_version = 6')
     }
   })
 }

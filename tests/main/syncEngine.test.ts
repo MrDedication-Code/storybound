@@ -350,6 +350,100 @@ describe('DesktopSyncEngine', () => {
     expect((await targetEngine.run()).pushed).toBe(0)
   })
 
+  it('syncs bookmarks, including ones saved before anchors existed', async () => {
+    const provider = new MemoryProvider()
+    const key = Uint8Array.from({ length: 32 }, (_, index) => index + 9)
+    const source = await databaseWithProfile(DEVICE_A)
+    source
+      .prepare(
+        `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+         VALUES ('book-marks', 'Marked', '', 'ongoing', ?, ?, 1)`
+      )
+      .run(NOW, NOW)
+    source
+      .prepare(
+        `INSERT INTO chapters (
+           id, book_id, title, content, position, created_at, updated_at, word_count
+         ) VALUES ('marked-one', 'book-marks', 'One', 'Prose', 0, ?, ?, 1)`
+      )
+      .run(NOW, NOW)
+    source
+      .prepare(
+        `INSERT INTO chapter_anchors (id, chapter_id, fallback_location, created_at, updated_at)
+         VALUES ('mark-anchor', 'marked-one', 0.4, ?, ?)`
+      )
+      .run(NOW, NOW)
+    source
+      .prepare(
+        `INSERT INTO bookmarks (
+           id, book_id, chapter_id, location, note, anchor_id, label, color, created_at,
+           updated_at
+         ) VALUES
+           ('mark-1', 'book-marks', 'marked-one', 0.4, 'Reread', 'mark-anchor', 'The storm',
+             'green', ?, ?),
+           ('mark-old', 'book-marks', 'marked-one', 0.9, '', NULL, '', 'gold', ?, NULL)`
+      )
+      .run(NOW, NOW, NOW)
+
+    const sourceEngine = new DesktopSyncEngine(source, provider, PROFILE_ID, DEVICE_A, key, 1)
+    await sourceEngine.run()
+    const target = await databaseWithProfile(DEVICE_B)
+    const targetEngine = new DesktopSyncEngine(target, provider, PROFILE_ID, DEVICE_B, key, 1)
+    await targetEngine.run()
+
+    const readMarks = (database: Database.Database): Array<Record<string, unknown>> =>
+      database
+        .prepare(
+          `SELECT bm.id, bm.location, bm.label, bm.note, bm.color, bm.deleted_at,
+             anchor.fallback_location
+           FROM bookmarks bm JOIN chapter_anchors anchor ON anchor.id = bm.anchor_id
+           ORDER BY bm.id`
+        )
+        .all() as Array<Record<string, unknown>>
+    expect(readMarks(target)).toEqual([
+      {
+        id: 'mark-1',
+        location: 0.4,
+        label: 'The storm',
+        note: 'Reread',
+        color: 'green',
+        deleted_at: null,
+        fallback_location: 0.4
+      },
+      {
+        id: 'mark-old',
+        location: 0.9,
+        label: '',
+        note: '',
+        color: 'gold',
+        deleted_at: null,
+        fallback_location: 0.9
+      }
+    ])
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+
+    target
+      .prepare(
+        `UPDATE bookmarks SET deleted_at = ?, updated_at = ?, row_version = row_version + 1
+         WHERE id = 'mark-1'`
+      )
+      .run('2026-08-06T21:00:00.000Z', '2026-08-06T21:00:00.000Z')
+    target
+      .prepare(
+        `UPDATE chapter_anchors SET deleted_at = ?, row_version = row_version + 1
+         WHERE id = 'mark-anchor'`
+      )
+      .run('2026-08-06T21:00:00.000Z')
+    await targetEngine.run()
+    await sourceEngine.run()
+    expect(
+      source.prepare(`SELECT deleted_at FROM bookmarks WHERE id = 'mark-1'`).pluck().get()
+    ).toBe('2026-08-06T21:00:00.000Z')
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
   it('skips record types this version does not understand instead of failing', async () => {
     const provider = new MemoryProvider()
     const key = Uint8Array.from({ length: 32 }, (_, index) => index + 11)

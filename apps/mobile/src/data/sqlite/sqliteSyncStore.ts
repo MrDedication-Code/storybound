@@ -223,6 +223,17 @@ export class SQLiteSyncStore {
                     a.updated_at AS changed_at
              FROM annotations a JOIN books b ON b.id = a.book_id
              WHERE a.deleted_at IS NULL`
+          )),
+          ...(await transaction.getAllAsync<{
+            entity_type: CoreSyncEntityType
+            entity_id: string
+            row_version: number
+            changed_at: string
+          }>(
+            `SELECT 'bookmark' AS entity_type, m.id AS entity_id, m.row_version,
+                    m.updated_at AS changed_at
+             FROM bookmarks m JOIN books b ON b.id = m.book_id
+             WHERE m.deleted_at IS NULL`
           ))
         ]
         for (const entity of entities) {
@@ -541,6 +552,15 @@ export class SQLiteSyncStore {
         [entityId]
       )
       if (row) return row
+    } else if (entityType === 'bookmark') {
+      const row = await database.getFirstAsync<Record<string, unknown>>(
+        `SELECT id, book_id, chapter_id, anchor_id, location, label, note, color, start_offset,
+                end_offset, fallback_location, quote, prefix, suffix, content_hash,
+                resolution_status, created_at, updated_at, deleted_at, row_version
+         FROM bookmarks WHERE id = ?`,
+        [entityId]
+      )
+      if (row) return row
     } else {
       const row = await database.getFirstAsync<Record<string, unknown>>(
         `SELECT book_id, chapter_id, scroll_position, progress_percentage, last_read_at,
@@ -573,7 +593,8 @@ export class SQLiteSyncStore {
           library: 'libraries',
           book: 'books',
           chapter: 'chapters',
-          annotation: 'annotations'
+          annotation: 'annotations',
+          bookmark: 'bookmarks'
         }[change.entityType]
         await transaction.runAsync(
           `UPDATE ${table} SET deleted_at = ?, row_version = ? WHERE id = ?`,
@@ -735,6 +756,48 @@ export class SQLiteSyncStore {
           requiredValue(value, 'anchor_id'),
           requiredValue(value, 'kind'),
           requiredValue(value, 'body'),
+          requiredValue(value, 'color'),
+          value.start_offset,
+          value.end_offset,
+          requiredValue(value, 'fallback_location'),
+          requiredValue(value, 'quote'),
+          requiredValue(value, 'prefix'),
+          requiredValue(value, 'suffix'),
+          requiredValue(value, 'content_hash'),
+          requiredValue(value, 'resolution_status'),
+          requiredValue(value, 'created_at'),
+          requiredValue(value, 'updated_at'),
+          value.deleted_at,
+          requiredValue(value, 'row_version')
+        ]
+      )
+      return
+    }
+
+    if (change.entityType === 'bookmark') {
+      await transaction.runAsync(
+        `INSERT INTO bookmarks (
+           id, book_id, chapter_id, anchor_id, location, label, note, color, start_offset,
+           end_offset, fallback_location, quote, prefix, suffix, content_hash,
+           resolution_status, created_at, updated_at, deleted_at, row_version
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           book_id = excluded.book_id, chapter_id = excluded.chapter_id,
+           anchor_id = excluded.anchor_id, location = excluded.location, label = excluded.label,
+           note = excluded.note, color = excluded.color, start_offset = excluded.start_offset,
+           end_offset = excluded.end_offset, fallback_location = excluded.fallback_location,
+           quote = excluded.quote, prefix = excluded.prefix, suffix = excluded.suffix,
+           content_hash = excluded.content_hash, resolution_status = excluded.resolution_status,
+           created_at = excluded.created_at, updated_at = excluded.updated_at,
+           deleted_at = excluded.deleted_at, row_version = excluded.row_version`,
+        [
+          change.entityId,
+          requiredValue(value, 'book_id'),
+          requiredValue(value, 'chapter_id'),
+          requiredValue(value, 'anchor_id'),
+          requiredValue(value, 'location'),
+          requiredValue(value, 'label'),
+          requiredValue(value, 'note'),
           requiredValue(value, 'color'),
           value.start_offset,
           value.end_offset,

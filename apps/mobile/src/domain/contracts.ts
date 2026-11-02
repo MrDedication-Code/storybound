@@ -109,6 +109,36 @@ export interface UpdateAnnotationInput {
   color: string
 }
 
+/** A saved place in a chapter, kept as a position from 0 (start) to 1 (end), like the desktop. */
+export interface Bookmark {
+  id: string
+  bookId: string
+  chapterId: string
+  chapterTitle: string
+  location: number
+  label: string
+  note: string
+  color: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateBookmarkInput {
+  bookId: string
+  chapterId: string
+  location: number
+  label: string
+  note: string
+  color: string
+}
+
+export interface UpdateBookmarkInput {
+  id: string
+  label: string
+  note: string
+  color: string
+}
+
 /** Reader mode hides every editing control; editor mode adds them back. */
 export type AppMode = 'reader' | 'editor'
 
@@ -141,6 +171,11 @@ export interface MobileRepository {
   createAnnotation(input: CreateAnnotationInput): Promise<Annotation>
   updateAnnotation(input: UpdateAnnotationInput): Promise<Annotation>
   removeAnnotation(id: string): Promise<void>
+  /** Bookmarks in the book's chapters that are not in Trash, in reading order. */
+  listBookmarks(bookId: string): Promise<Bookmark[]>
+  createBookmark(input: CreateBookmarkInput): Promise<Bookmark>
+  updateBookmark(input: UpdateBookmarkInput): Promise<Bookmark>
+  removeBookmark(id: string): Promise<void>
   getSyncStatus(): Promise<LocalSyncStatus>
   getPreferences(): Promise<MobilePreferences>
   savePreferences(changes: Partial<MobilePreferences>): Promise<MobilePreferences>

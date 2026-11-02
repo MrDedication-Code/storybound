@@ -70,6 +70,43 @@ function boundedString(row: Record<string, unknown>, key: string, maximum: numbe
   return value
 }
 
+/** The fields a highlight and a bookmark share, including their place in the chapter. */
+function anchoredValues(
+  row: Record<string, unknown>,
+  entityId: string,
+  rowVersion: number
+): Record<string, string | number | null> {
+  const startOffset = nullableNumber(row, 'start_offset', 0)
+  const endOffset = nullableNumber(row, 'end_offset', 0)
+  if (
+    (startOffset === null) !== (endOffset === null) ||
+    (startOffset !== null && (!Number.isInteger(startOffset) || !Number.isInteger(endOffset))) ||
+    (startOffset !== null && endOffset !== null && startOffset > endOffset)
+  ) {
+    throw new Error('The synced position in the chapter is invalid.')
+  }
+  const status = row.resolution_status
+  return {
+    id: entityId,
+    book_id: stringValue(row, 'book_id'),
+    chapter_id: stringValue(row, 'chapter_id'),
+    anchor_id: stringValue(row, 'anchor_id'),
+    color: boundedString(row, 'color', 40) || 'gold',
+    start_offset: startOffset,
+    end_offset: endOffset,
+    fallback_location: numberValue(row, 'fallback_location', 0, 1),
+    quote: boundedString(row, 'quote', 100_000),
+    prefix: boundedString(row, 'prefix', 2_000),
+    suffix: boundedString(row, 'suffix', 2_000),
+    content_hash: boundedString(row, 'content_hash', 128),
+    resolution_status: status === 'resolved' || status === 'unresolved' ? status : 'approximate',
+    created_at: stringValue(row, 'created_at'),
+    updated_at: stringValue(row, 'updated_at'),
+    deleted_at: nullableString(row, 'deleted_at'),
+    row_version: rowVersion
+  }
+}
+
 function booleanInteger(row: Record<string, unknown>, key: string): number {
   return numberValue(row, key, 0, 1, true)
 }
@@ -191,41 +228,29 @@ export function normalizeRemoteEntity(
     if (kind !== 'highlight' && kind !== 'note') {
       throw new Error('The synced annotation kind is invalid.')
     }
-    const startOffset = nullableNumber(row, 'start_offset', 0)
-    const endOffset = nullableNumber(row, 'end_offset', 0)
-    if (
-      (startOffset === null) !== (endOffset === null) ||
-      (startOffset !== null && (!Number.isInteger(startOffset) || !Number.isInteger(endOffset))) ||
-      (startOffset !== null && endOffset !== null && startOffset > endOffset)
-    ) {
-      throw new Error('The synced highlight position is invalid.')
-    }
-    const status = row.resolution_status
     return {
       entityType,
       entityId,
       rowVersion,
       values: {
-        id: entityId,
-        book_id: stringValue(row, 'book_id'),
-        chapter_id: stringValue(row, 'chapter_id'),
-        anchor_id: stringValue(row, 'anchor_id'),
+        ...anchoredValues(row, entityId, rowVersion),
         kind,
-        body: boundedString(row, 'body', 100_000),
-        color: boundedString(row, 'color', 40) || 'gold',
-        start_offset: startOffset,
-        end_offset: endOffset,
-        fallback_location: numberValue(row, 'fallback_location', 0, 1),
-        quote: boundedString(row, 'quote', 100_000),
-        prefix: boundedString(row, 'prefix', 2_000),
-        suffix: boundedString(row, 'suffix', 2_000),
-        content_hash: boundedString(row, 'content_hash', 128),
-        resolution_status:
-          status === 'resolved' || status === 'unresolved' ? status : 'approximate',
-        created_at: stringValue(row, 'created_at'),
-        updated_at: stringValue(row, 'updated_at'),
-        deleted_at: nullableString(row, 'deleted_at'),
-        row_version: rowVersion
+        body: boundedString(row, 'body', 100_000)
+      }
+    }
+  }
+
+  if (entityType === 'bookmark') {
+    ensureIdentifier(row, 'id', entityId)
+    return {
+      entityType,
+      entityId,
+      rowVersion,
+      values: {
+        ...anchoredValues(row, entityId, rowVersion),
+        location: numberValue(row, 'location', 0, 1),
+        label: boundedString(row, 'label', 240),
+        note: boundedString(row, 'note', 10_000)
       }
     }
   }

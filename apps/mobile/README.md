@@ -41,13 +41,14 @@ The mobile client implements the live Storybound RPC contract:
 - `pull_storybound_changes`
 - `push_storybound_mutations`
 
-Library, book, chapter, reading-state, annotation, and book-cover payloads use the same canonical AES-256-GCM protocol and recovery-code verifier as desktop. The vault key never leaves the device unencrypted. Covers are stored in the `book_covers` table and shown as an inline image; a book without one keeps its generated cover. Server revisions and cursors remain decimal strings so PostgreSQL `bigint` values are never truncated by JavaScript numbers.
+Library, book, chapter, reading-state, annotation, bookmark, and book-cover payloads use the same canonical AES-256-GCM protocol and recovery-code verifier as desktop. The vault key never leaves the device unencrypted. Covers are stored in the `book_covers` table and shown as an inline image; a book without one keeps its generated cover. Server revisions and cursors remain decimal strings so PostgreSQL `bigint` values are never truncated by JavaScript numbers.
 
 ## Included flow
 
 - Library search and continue-reading state
 - Book details and chapter navigation
 - Reader themes, text sizing, progress, and resume position
+- Bookmarks: save your place from the reader footer with an optional name, note, and colour; the book's list jumps back to it
 - Highlights and notes: long-press a paragraph, narrow it to sentences, pick a colour, and add a note; tap a highlight to edit or remove it; the book's list jumps to each one
 - Full-height chapter editor with autosave and reader preview
 - Durable on-device books, chapters, reading state, and coalesced change ledger

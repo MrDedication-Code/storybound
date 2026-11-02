@@ -10,13 +10,14 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance
 } from 'react-native'
-import { AnnotationList } from '../components/AnnotationList'
 import {
   AnnotationSheet,
   type AnnotationDraft,
   type AnnotationSheetTarget
 } from '../components/AnnotationSheet'
 import { AppHeader } from '../components/AppHeader'
+import { BookmarkSheet, type BookmarkDraft } from '../components/BookmarkSheet'
+import { MarksList } from '../components/MarksList'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
 import {
@@ -24,6 +25,7 @@ import {
   READER_FONT_SIZE_MIN,
   type Annotation,
   type BookDetail,
+  type Bookmark,
   type Chapter,
   type MobilePreferences,
   type MobileRepository,
@@ -32,6 +34,7 @@ import {
 } from '../domain/contracts'
 import {
   calculateReadingProgress,
+  clamp,
   parseStoryBlocks,
   placeAnnotations,
   segmentBlock,
@@ -103,6 +106,9 @@ export function ReaderScreen({
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [sheet, setSheet] = useState<AnnotationSheetTarget | null>(null)
   const [listOpen, setListOpen] = useState(false)
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  // The bookmark being edited, or {} to add one at the current place.
+  const [bookmarkSheet, setBookmarkSheet] = useState<{ bookmark?: Bookmark } | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
   const scrollRef = useRef<ScrollViewInstance>(null)
@@ -140,10 +146,11 @@ export function ReaderScreen({
     let active = true
     const load = async (): Promise<void> => {
       try {
-        const [nextBook, nextReading, nextAnnotations] = await Promise.all([
+        const [nextBook, nextReading, nextAnnotations, nextBookmarks] = await Promise.all([
           repository.getBook(bookId),
           repository.getReadingState(bookId),
-          repository.listAnnotations(bookId)
+          repository.listAnnotations(bookId),
+          repository.listBookmarks(bookId)
         ])
         if (!active) return
         const nextChapterId =
@@ -151,6 +158,7 @@ export function ReaderScreen({
         setBook(nextBook)
         setReading(nextReading)
         setAnnotations(nextAnnotations)
+        setBookmarks(nextBookmarks)
         if (nextChapterId) await loadChapter(nextBook, nextChapterId, nextReading)
       } catch (caught) {
         if (active)
@@ -277,6 +285,43 @@ export function ReaderScreen({
     tryPendingJump()
   }
 
+  const jumpToBookmark = async (bookmark: Bookmark): Promise<void> => {
+    setListOpen(false)
+    if (!book || !chapter) return
+    if (bookmark.chapterId === chapter.id) {
+      positionRef.current = bookmark.location
+      restorePendingRef.current = true
+      restoreScroll()
+      return
+    }
+    await persistPosition(true)
+    await loadChapter(book, bookmark.chapterId, {
+      bookId,
+      chapterId: bookmark.chapterId,
+      scrollPosition: bookmark.location,
+      progressPercentage: 0,
+      lastReadAt: null
+    })
+  }
+
+  const saveBookmark = async (draft: BookmarkDraft, existing?: Bookmark): Promise<void> => {
+    if (!chapter) return
+    if (existing) {
+      await repository.updateBookmark({ id: existing.id, ...draft })
+    } else {
+      await repository.createBookmark({
+        bookId,
+        chapterId: chapter.id,
+        location: positionRef.current,
+        ...draft
+      })
+    }
+    setBookmarks(await repository.listBookmarks(bookId))
+  }
+
+  const reportJumpError = (caught: unknown): void =>
+    setError(caught instanceof Error ? caught.message : 'That chapter could not open.')
+
   if (error && (!book || !chapter)) return <ErrorScreen message={error} onBack={onBack} />
   if (!book || !chapter) return <LoadingScreen label="Preparing the next page…" />
 
@@ -284,7 +329,14 @@ export function ReaderScreen({
   const chapterIndex = book.chapters.findIndex((item) => item.id === chapter.id)
   const previous = chapterIndex > 0 ? book.chapters[chapterIndex - 1] : null
   const next = chapterIndex < book.chapters.length - 1 ? book.chapters[chapterIndex + 1] : null
-  const notesLabel = `Highlights & notes${annotations.length ? ` (${annotations.length})` : ''}`
+  const markCount = bookmarks.length + annotations.length
+  const notesLabel = `Bookmarks & notes${markCount ? ` (${markCount})` : ''}`
+  // Position within this chapter, read back from the overall progress shown in the footer.
+  const chapterPosition = clamp((progress / 100) * book.chapters.length - chapterIndex, 0, 1)
+  const nearbyBookmark = bookmarks.find(
+    (bookmark) =>
+      bookmark.chapterId === chapter.id && Math.abs(bookmark.location - chapterPosition) <= 0.02
+  )
 
   const renderText = (block: StoryBlock): React.ReactNode[] =>
     segmentBlock(block, placed).map((segment) => {
@@ -375,7 +427,8 @@ export function ReaderScreen({
             }}
           />
           <Text style={[styles.controlHint, { color: palette.muted }]}>
-            Long-press a paragraph to highlight it or add a note.
+            Tap Bookmark below to save your place. Long-press a paragraph to highlight it or add a
+            note.
           </Text>
         </View>
       ) : null}
@@ -507,21 +560,52 @@ export function ReaderScreen({
         <Text style={[styles.progressText, { color: palette.muted }]}>
           {reading?.chapterId ? `${chapterIndex + 1}/${book.chapters.length}` : 'New'}
         </Text>
+        <Pressable
+          accessibilityHint={
+            nearbyBookmark ? 'Edits the bookmark here' : 'Saves your place in this chapter'
+          }
+          accessibilityRole="button"
+          hitSlop={10}
+          style={({ pressed }) => [styles.bookmarkButton, pressed && styles.pressed]}
+          onPress={() => setBookmarkSheet({ bookmark: nearbyBookmark })}
+        >
+          <Text style={styles.bookmarkLabel}>{nearbyBookmark ? 'Bookmarked' : 'Bookmark'}</Text>
+        </Pressable>
       </View>
 
       {listOpen ? (
-        <AnnotationList
+        <MarksList
           annotations={annotations}
+          bookmarks={bookmarks}
           onClose={() => setListOpen(false)}
-          onEdit={(annotation) => {
+          onEditAnnotation={(annotation) => {
             setListOpen(false)
             setSheet({ mode: 'edit', annotation })
           }}
-          onOpen={(annotation) => {
-            void jumpTo(annotation).catch((caught: unknown) =>
-              setError(caught instanceof Error ? caught.message : 'That chapter could not open.')
-            )
+          onEditBookmark={(bookmark) => {
+            setListOpen(false)
+            setBookmarkSheet({ bookmark })
           }}
+          onOpenAnnotation={(annotation) => void jumpTo(annotation).catch(reportJumpError)}
+          onOpenBookmark={(bookmark) => void jumpToBookmark(bookmark).catch(reportJumpError)}
+        />
+      ) : null}
+      {bookmarkSheet ? (
+        <BookmarkSheet
+          bookmark={bookmarkSheet.bookmark}
+          place={
+            bookmarkSheet.bookmark
+              ? `${bookmarkSheet.bookmark.chapterTitle} · ${Math.round(
+                  bookmarkSheet.bookmark.location * 100
+                )}% through`
+              : `Chapter ${chapterIndex + 1} · ${Math.round(chapterPosition * 100)}% through`
+          }
+          onClose={() => setBookmarkSheet(null)}
+          onRemove={async (bookmark) => {
+            await repository.removeBookmark(bookmark.id)
+            setBookmarks(await repository.listBookmarks(bookId))
+          }}
+          onSave={(draft) => saveBookmark(draft, bookmarkSheet.bookmark)}
         />
       ) : null}
       {sheet ? (
@@ -700,6 +784,19 @@ const styles = StyleSheet.create({
     minWidth: 30,
     fontSize: 11,
     fontVariant: ['tabular-nums']
+  },
+  bookmarkButton: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingLeft: 6
+  },
+  bookmarkLabel: {
+    color: storyboundColors.brass,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  pressed: {
+    opacity: 0.6
   },
   progressTrack: {
     flex: 1,

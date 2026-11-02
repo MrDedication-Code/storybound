@@ -1,19 +1,9 @@
 import { useState } from 'react'
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from 'react-native'
-import { ANNOTATION_COLORS, type Annotation } from '../domain/contracts'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import type { Annotation } from '../domain/contracts'
 import { splitSentences, type StoryBlock } from '../domain/reading'
 import { highlightColor, storyboundColors, storyboundRadii } from '../theme'
+import { BottomSheet, ColorChoices } from './BottomSheet'
 import { PrimaryButton } from './PrimaryButton'
 
 export type AnnotationSheetTarget =
@@ -108,132 +98,91 @@ export function AnnotationSheet({
   }
 
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
-      >
-        <Pressable accessibilityLabel="Close" style={styles.dismiss} onPress={onClose} />
-        <View style={styles.sheet}>
-          <Text style={styles.title}>
-            {editing ? (editing.body.trim() ? 'Note' : 'Highlight') : 'Highlight'}
+    <BottomSheet onClose={onClose}>
+      <Text style={styles.title}>
+        {editing ? (editing.body.trim() ? 'Note' : 'Highlight') : 'Highlight'}
+      </Text>
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.passageScroll}>
+        {editing ? (
+          <Text style={[styles.passage, { backgroundColor: wash }]}>
+            {editing.quote.trim() || 'A note on this chapter'}
           </Text>
-          <ScrollView keyboardShouldPersistTaps="handled" style={styles.passageScroll}>
-            {editing ? (
-              <Text style={[styles.passage, { backgroundColor: wash }]}>
-                {editing.quote.trim() || 'A note on this chapter'}
+        ) : (
+          <Text style={styles.passage}>
+            {sentences.map((sentence, index) => (
+              <Text
+                accessibilityRole="button"
+                key={sentence.start}
+                style={
+                  index >= range.from && index <= range.to
+                    ? { backgroundColor: wash }
+                    : styles.unselected
+                }
+                onPress={() => tapSentence(index)}
+              >
+                {content.slice(sentence.start, sentence.end).replace(/\r/g, '')}
+                {index < sentences.length - 1 ? ' ' : ''}
               </Text>
-            ) : (
-              <Text style={styles.passage}>
-                {sentences.map((sentence, index) => (
-                  <Text
-                    accessibilityRole="button"
-                    key={sentence.start}
-                    style={
-                      index >= range.from && index <= range.to
-                        ? { backgroundColor: wash }
-                        : styles.unselected
-                    }
-                    onPress={() => tapSentence(index)}
-                  >
-                    {content.slice(sentence.start, sentence.end).replace(/\r/g, '')}
-                    {index < sentences.length - 1 ? ' ' : ''}
-                  </Text>
-                ))}
-              </Text>
-            )}
-          </ScrollView>
-          {!editing && sentences.length > 1 ? (
-            <View style={styles.hintRow}>
-              <Text style={styles.hint}>Tap sentences to choose what to highlight.</Text>
-              {narrowed ? (
-                <Pressable
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={() => {
-                    setNarrowed(false)
-                    setRange({ from: 0, to: sentences.length - 1 })
-                  }}
-                >
-                  <Text style={styles.link}>Whole paragraph</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-
-          <View accessibilityRole="radiogroup" style={styles.colors}>
-            {ANNOTATION_COLORS.map((value) => (
-              <Pressable
-                accessibilityLabel={`${value} highlight`}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: color === value }}
-                hitSlop={4}
-                key={value}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: highlightColor(value).swatch },
-                  color === value && styles.swatchSelected
-                ]}
-                onPress={() => setColor(value)}
-              />
             ))}
-          </View>
-
-          <TextInput
-            multiline
-            accessibilityLabel="Note"
-            placeholder="Add a note (optional)"
-            placeholderTextColor={storyboundColors.muted}
-            style={styles.note}
-            value={body}
-            onChangeText={setBody}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          <View style={styles.actions}>
-            {editing ? (
-              <PrimaryButton
-                disabled={busy}
-                label="Remove"
-                style={styles.action}
-                variant="quiet"
-                onPress={remove}
-              />
-            ) : (
-              <PrimaryButton
-                disabled={busy}
-                label="Cancel"
-                style={styles.action}
-                variant="quiet"
-                onPress={onClose}
-              />
-            )}
-            <PrimaryButton disabled={busy} label="Save" style={styles.action} onPress={save} />
-          </View>
+          </Text>
+        )}
+      </ScrollView>
+      {!editing && sentences.length > 1 ? (
+        <View style={styles.hintRow}>
+          <Text style={styles.hint}>Tap sentences to choose what to highlight.</Text>
+          {narrowed ? (
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => {
+                setNarrowed(false)
+                setRange({ from: 0, to: sentences.length - 1 })
+              }}
+            >
+              <Text style={styles.link}>Whole paragraph</Text>
+            </Pressable>
+          ) : null}
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ) : null}
+
+      <ColorChoices label="highlight" value={color} onChange={setColor} />
+
+      <TextInput
+        multiline
+        accessibilityLabel="Note"
+        placeholder="Add a note (optional)"
+        placeholderTextColor={storyboundColors.muted}
+        style={styles.note}
+        value={body}
+        onChangeText={setBody}
+      />
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.actions}>
+        {editing ? (
+          <PrimaryButton
+            disabled={busy}
+            label="Remove"
+            style={styles.action}
+            variant="quiet"
+            onPress={remove}
+          />
+        ) : (
+          <PrimaryButton
+            disabled={busy}
+            label="Cancel"
+            style={styles.action}
+            variant="quiet"
+            onPress={onClose}
+          />
+        )}
+        <PrimaryButton disabled={busy} label="Save" style={styles.action} onPress={save} />
+      </View>
+    </BottomSheet>
   )
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(23, 19, 15, 0.42)'
-  },
-  dismiss: {
-    flex: 1
-  },
-  sheet: {
-    gap: 14,
-    maxHeight: '86%',
-    padding: 20,
-    paddingBottom: 34,
-    borderTopLeftRadius: storyboundRadii.large,
-    borderTopRightRadius: storyboundRadii.large,
-    backgroundColor: storyboundColors.paperRaised
-  },
   title: {
     color: storyboundColors.brass,
     fontSize: 12,
@@ -268,20 +217,6 @@ const styles = StyleSheet.create({
     color: storyboundColors.brass,
     fontSize: 13,
     fontWeight: '700'
-  },
-  colors: {
-    flexDirection: 'row',
-    gap: 14
-  },
-  swatch: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: 'transparent'
-  },
-  swatchSelected: {
-    borderColor: storyboundColors.text
   },
   note: {
     minHeight: 84,
