@@ -15,6 +15,12 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # Build and test output must never ride along: electron-builder only skips its *current*
+  # output folder, so earlier builds under dist/ and Playwright's throwaway profiles in
+  # test-results/ were otherwise packed into app.asar.
+  - '!{dist,dist-*,test-results,playwright-report,coverage,build}/**'
+  - '!*.md'
+  - '!{vitest.config.ts,playwright.config.ts}'
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**
