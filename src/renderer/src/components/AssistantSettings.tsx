@@ -187,6 +187,11 @@ export function AssistantSettings({ notify }: AssistantSettingsProps): React.JSX
               If a chapter is rewritten and the highlighted words disappear, Claude is still shown
               your note and the words it was attached to.
             </li>
+            <li>
+              Read each book’s story bible, add new entries, and rewrite an entry’s main text. If
+              you edited that entry after Claude last read it, Claude’s change is refused rather
+              than overwriting yours.
+            </li>
             <li>Create a book, and set its blurb, status, series and author.</li>
             <li>Add chapters to the end of a book, in reading order.</li>
             <li>

@@ -352,6 +352,130 @@ describe('get_annotations', () => {
   })
 })
 
+describe('story bible tools', () => {
+  async function bookWithBible(): Promise<{
+    store: StoryboundStore
+    bookId: string
+    mara: string
+    harbour: string
+  }> {
+    const store = await createStore()
+    const bookId = callTool(store, 'create_book', { title: 'Bible Book' }).bookId as string
+    const mara = store.createStoryEntity({
+      bookId,
+      entityType: 'character',
+      title: 'Mara Quill',
+      summary: 'The harbour accountant.',
+      bodyMarkdown: 'Grew up above the chandlery.'
+    }).id
+    const harbour = store.createStoryEntity({
+      bookId,
+      entityType: 'location',
+      title: 'The Harbour',
+      bodyMarkdown: 'Cold, loud, always wet.'
+    }).id
+    store.createStoryEntityRelation({
+      fromEntityId: mara,
+      toEntityId: harbour,
+      relationshipType: 'works at'
+    })
+    return { store, bookId, mara, harbour }
+  }
+
+  it('reads every entry in app order with content, links, and relationships', async () => {
+    const { store, bookId, mara } = await bookWithBible()
+    const bible = callTool(store, 'get_bible', { bookId })
+    const sections = bible.sections as Array<Record<string, unknown>>
+
+    expect(bible).toMatchObject({ bookTitle: 'Bible Book', sectionCount: 2 })
+    expect(sections.map((section) => section.name)).toEqual(['Mara Quill', 'The Harbour'])
+    expect(sections[0]).toMatchObject({
+      sectionId: mara,
+      category: 'character',
+      categoryLabel: 'Characters',
+      summary: 'The harbour accountant.',
+      content: 'Grew up above the chandlery.',
+      appearsInChapters: [],
+      updatedAt: expect.any(String)
+    })
+    expect(bible.relationships).toEqual([
+      expect.objectContaining({
+        from: 'Mara Quill',
+        relationshipType: 'works at',
+        to: 'The Harbour'
+      })
+    ])
+  })
+
+  it('replaces only the named section and returns the previous content', async () => {
+    const { store, bookId, mara, harbour } = await bookWithBible()
+    const before = store.getStoryEntity(mara)
+    const result = callTool(store, 'update_bible_section', {
+      bookId,
+      sectionId: mara,
+      content: 'Grew up above the chandlery. Keeps two ledgers.',
+      expectedUpdatedAt: before.updatedAt
+    })
+
+    expect(result).toMatchObject({
+      updated: true,
+      previousContent: 'Grew up above the chandlery.',
+      previousUpdatedAt: before.updatedAt,
+      section: { content: 'Grew up above the chandlery. Keeps two ledgers.' }
+    })
+    const after = store.getStoryEntity(mara)
+    expect(after).toMatchObject({
+      title: 'Mara Quill',
+      summary: 'The harbour accountant.',
+      entityType: 'character'
+    })
+    expect(store.getStoryEntity(harbour).bodyMarkdown).toBe('Cold, loud, always wet.')
+  })
+
+  it('refuses to overwrite an entry edited since it was read and returns the current version', async () => {
+    const { store, bookId, mara } = await bookWithBible()
+    store.updateStoryEntity({ id: mara, bodyMarkdown: 'Edited by the user in the app.' })
+    const result = callTool(store, 'update_bible_section', {
+      bookId,
+      sectionId: mara,
+      content: 'Claude’s stale rewrite.',
+      expectedUpdatedAt: '2000-01-01T00:00:00.000Z'
+    })
+
+    expect(result).toMatchObject({
+      updated: false,
+      conflict: true,
+      current: { content: 'Edited by the user in the app.' }
+    })
+    expect(store.getStoryEntity(mara).bodyMarkdown).toBe('Edited by the user in the app.')
+  })
+
+  it('rejects a section from another book', async () => {
+    const { store, mara } = await bookWithBible()
+    const otherBook = callTool(store, 'create_book', { title: 'Other Book' }).bookId
+    expect(() =>
+      callTool(store, 'update_bible_section', { bookId: otherBook, sectionId: mara, content: 'x' })
+    ).toThrow(/does not belong to this book/)
+  })
+
+  it('creates entries under Other by default and refuses duplicate names', async () => {
+    const { store, bookId } = await bookWithBible()
+    const created = callTool(store, 'create_bible_section', {
+      bookId,
+      name: 'Rules of the Ledger',
+      content: '1. Nothing is erased.'
+    })
+    expect(created).toMatchObject({
+      created: true,
+      section: { category: 'custom', categoryLabel: 'Other', content: '1. Nothing is erased.' }
+    })
+    expect(() =>
+      callTool(store, 'create_bible_section', { bookId, name: ' mara  quill', content: 'Again' })
+    ).toThrow(/already has an entry/)
+    expect(callTool(store, 'get_bible', { bookId }).sectionCount).toBe(3)
+  })
+})
+
 describe('MCP server', () => {
   interface StartedServer {
     port: number
