@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createStoryboundPaths, openStoryboundDatabase } from '../../src/main/database'
 import {
+  applyLocalSyncEntity,
   DesktopSyncEngine,
+  listLocalSyncEntities,
   type PullSyncRequest,
   type PullSyncResponse,
   type PushSyncRequest,
@@ -114,6 +116,112 @@ afterEach(() => {
 })
 
 describe('DesktopSyncEngine', () => {
+  it('syncs every library and files each book into its own library', async () => {
+    const provider = new MemoryProvider()
+    const key = Uint8Array.from({ length: 32 }, (_, index) => index + 7)
+    const source = await databaseWithProfile(DEVICE_A)
+    source
+      .prepare(
+        `INSERT INTO libraries (id, name, description, created_at, updated_at)
+         VALUES ('library-horror', 'Horror/Thriller', '', ?, ?)`
+      )
+      .run(NOW, NOW)
+    for (const [bookId, title] of [
+      ['book-default', 'In The Synced Library'],
+      ['book-horror', 'Zero Balance']
+    ]) {
+      source
+        .prepare(
+          `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+           VALUES (?, ?, '', 'ongoing', ?, ?, 1)`
+        )
+        .run(bookId, title, NOW, NOW)
+      source
+        .prepare(
+          `INSERT INTO chapters (
+             id, book_id, title, content, position, created_at, updated_at, word_count
+           ) VALUES (?, ?, 'One', 'Prose', 0, ?, ?, 1)`
+        )
+        .run(`${bookId}-chapter`, bookId, NOW, NOW)
+    }
+    source
+      .prepare(`UPDATE book_libraries SET library_id = 'library-horror' WHERE book_id = ?`)
+      .run('book-horror')
+
+    const sourceEngine = new DesktopSyncEngine(source, provider, PROFILE_ID, DEVICE_A, key, 1)
+    await sourceEngine.run()
+    const target = await databaseWithProfile(DEVICE_B)
+    const targetEngine = new DesktopSyncEngine(target, provider, PROFILE_ID, DEVICE_B, key, 1)
+    await targetEngine.run()
+
+    expect(
+      target.prepare(`SELECT name FROM libraries WHERE id = 'library-horror'`).pluck().get()
+    ).toBe('Horror/Thriller')
+    const placement = Object.fromEntries(
+      (
+        target
+          .prepare('SELECT book_id, library_id FROM book_libraries ORDER BY book_id')
+          .all() as Array<{ book_id: string; library_id: string }>
+      ).map((row) => [row.book_id, row.library_id])
+    )
+    expect(placement).toEqual({ 'book-default': LIBRARY_ID, 'book-horror': 'library-horror' })
+    expect(
+      target.prepare(`SELECT content FROM chapters WHERE id = 'book-horror-chapter'`).pluck().get()
+    ).toBe('Prose')
+
+    // A settled collection does not bounce changes back and forth.
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
+  it('files older book payloads into the profile library and waits for unknown libraries', async () => {
+    const database = await databaseWithProfile(DEVICE_B)
+    const source = await databaseWithProfile(DEVICE_A)
+    source
+      .prepare(
+        `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+         VALUES ('template', 'Template', '', 'ongoing', ?, ?, 0)`
+      )
+      .run(NOW, NOW)
+    const template = listLocalSyncEntities(source, LIBRARY_ID).find(
+      (entity) => entity.entityType === 'book'
+    )!.value
+    const book = (id: string, extra: Record<string, unknown> = {}): Record<string, unknown> => {
+      const value: Record<string, unknown> = { ...template, id, title: id, ...extra }
+      if (!('library_id' in extra)) delete value.library_id
+      return value
+    }
+    applyLocalSyncEntity(database, LIBRARY_ID, 'book', 'old-book', 'upsert', book('old-book'))
+    applyLocalSyncEntity(
+      database,
+      LIBRARY_ID,
+      'book',
+      'early-book',
+      'upsert',
+      book('early-book', { library_id: 'library-later' })
+    )
+    const libraryOf = (bookId: string): unknown =>
+      database
+        .prepare('SELECT library_id FROM book_libraries WHERE book_id = ?')
+        .pluck()
+        .get(bookId)
+    expect(libraryOf('old-book')).toBe(LIBRARY_ID)
+    expect(libraryOf('early-book')).toBe('library-later')
+
+    applyLocalSyncEntity(database, LIBRARY_ID, 'library', 'library-later', 'upsert', {
+      id: 'library-later',
+      name: 'Arrived Later',
+      description: '',
+      created_at: NOW,
+      updated_at: NOW,
+      deleted_at: null,
+      row_version: 2
+    })
+    expect(
+      database.prepare(`SELECT name FROM libraries WHERE id = 'library-later'`).pluck().get()
+    ).toBe('Arrived Later')
+  })
+
   it('encrypts a local book and chapter, then reconstructs them on a second offline database', async () => {
     const provider = new MemoryProvider()
     const key = Uint8Array.from({ length: 32 }, (_, index) => index + 1)

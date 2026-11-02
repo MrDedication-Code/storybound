@@ -16,6 +16,7 @@ export interface Chapter extends ChapterSummary {
 
 export interface BookSummary {
   id: string
+  libraryId: string
   title: string
   subtitle: string
   authorName: string
@@ -26,6 +27,13 @@ export interface BookSummary {
   totalWordCount: number
   progressPercentage: number
   lastReadAt: string | null
+}
+
+/** A library that holds at least one book; empty ones are not shown on the phone. */
+export interface LibrarySummary {
+  id: string
+  name: string
+  bookCount: number
 }
 
 export interface BookDetail extends BookSummary {
@@ -81,6 +89,7 @@ export const DEFAULT_PREFERENCES: MobilePreferences = {
 
 export interface MobileRepository {
   listBooks(): Promise<BookSummary[]>
+  listLibraries(): Promise<LibrarySummary[]>
   getBook(bookId: string): Promise<BookDetail>
   getChapter(chapterId: string): Promise<Chapter>
   updateChapter(input: UpdateChapterInput): Promise<Chapter>

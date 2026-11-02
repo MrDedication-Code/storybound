@@ -60,6 +60,13 @@ const BOOK_COLUMNS = [
   'cover_position_y'
 ] as const
 
+/**
+ * Book payloads name their library. Books do not store it themselves (book_libraries does), so a
+ * future "move to library" must also bump the book's row_version for the move to sync.
+ * Payloads from older versions lack it and fall back to the profile's library.
+ */
+const BOOK_LIBRARY_KEY = 'library_id'
+
 const CHAPTER_COLUMNS = [
   'id',
   'book_id',
@@ -149,43 +156,45 @@ function upsert(
     .run(...columns.map((column) => row[column]))
 }
 
+/**
+ * Every library, book, chapter, and reading position on this device. The vault holds the whole
+ * library collection; `scopeLibraryId` is only the profile's bookkeeping key for outbox and
+ * entity-state rows, not a filter. Each book carries `library_id` so receivers file it correctly.
+ */
 export function listLocalSyncEntities(
   database: Database.Database,
-  libraryId: string
+  scopeLibraryId: string
 ): LocalSyncEntity[] {
   const libraries = database
-    .prepare(`SELECT ${selectColumns(LIBRARY_COLUMNS)} FROM libraries WHERE id = ?`)
-    .all(libraryId) as Array<Record<string, unknown>>
+    .prepare(`SELECT ${selectColumns(LIBRARY_COLUMNS)} FROM libraries`)
+    .all() as Array<Record<string, unknown>>
   const books = database
     .prepare(
-      `SELECT ${selectColumns(BOOK_COLUMNS, 'b')}
+      `SELECT ${selectColumns(BOOK_COLUMNS, 'b')}, bl.library_id AS ${BOOK_LIBRARY_KEY}
        FROM books b
-       JOIN book_libraries bl ON bl.book_id = b.id
-       WHERE bl.library_id = ?`
+       JOIN book_libraries bl ON bl.book_id = b.id`
     )
-    .all(libraryId) as Array<Record<string, unknown>>
+    .all() as Array<Record<string, unknown>>
   const chapters = database
     .prepare(
       `SELECT ${selectColumns(CHAPTER_COLUMNS, 'c')}
        FROM chapters c
-       JOIN book_libraries bl ON bl.book_id = c.book_id
-       WHERE bl.library_id = ?`
+       JOIN book_libraries bl ON bl.book_id = c.book_id`
     )
-    .all(libraryId) as Array<Record<string, unknown>>
+    .all() as Array<Record<string, unknown>>
   const reading = database
     .prepare(
       `SELECT ${selectColumns(READING_COLUMNS, 'r')}
        FROM reading_states r
-       JOIN book_libraries bl ON bl.book_id = r.book_id
-       WHERE bl.library_id = ?`
+       JOIN book_libraries bl ON bl.book_id = r.book_id`
     )
-    .all(libraryId) as Array<Record<string, unknown>>
+    .all() as Array<Record<string, unknown>>
 
   return [
-    ...libraries.map((value) => localEntity(libraryId, 'library', 'id', value)),
-    ...books.map((value) => localEntity(libraryId, 'book', 'id', value)),
-    ...chapters.map((value) => localEntity(libraryId, 'chapter', 'id', value)),
-    ...reading.map((value) => localEntity(libraryId, 'reading-state', 'book_id', value))
+    ...libraries.map((value) => localEntity(scopeLibraryId, 'library', 'id', value)),
+    ...books.map((value) => localEntity(scopeLibraryId, 'book', 'id', value)),
+    ...chapters.map((value) => localEntity(scopeLibraryId, 'chapter', 'id', value)),
+    ...reading.map((value) => localEntity(scopeLibraryId, 'reading-state', 'book_id', value))
   ]
 }
 
@@ -242,6 +251,16 @@ export function applyLocalSyncEntity(
   }
   if (entityType === 'book') {
     const row = boundedRecord(value, BOOK_COLUMNS, 'id', entityId)
+    const named = value[BOOK_LIBRARY_KEY]
+    const targetLibraryId = typeof named === 'string' && named.length > 0 ? named : libraryId
+    // The library record normally arrives first; if not, hold the book in a placeholder that the
+    // library's own record overwrites when it lands.
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO libraries (id, name, description, created_at, updated_at)
+         VALUES (?, 'Synced library', '', ?, ?)`
+      )
+      .run(targetLibraryId, new Date(0).toISOString(), new Date(0).toISOString())
     upsert(database, 'books', row, BOOK_COLUMNS, 'id')
     const now = requireString(row, 'updated_at')
     database
@@ -252,7 +271,7 @@ export function applyLocalSyncEntity(
          ON CONFLICT(book_id) DO UPDATE SET
            library_id = excluded.library_id, updated_at = excluded.updated_at, deleted_at = NULL`
       )
-      .run(entityId, entityId, libraryId, requireString(row, 'created_at'), now)
+      .run(entityId, entityId, targetLibraryId, requireString(row, 'created_at'), now)
     return requirePositiveVersion(row)
   }
   if (entityType === 'chapter') {

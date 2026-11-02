@@ -84,6 +84,28 @@ describe('SQLite mobile repository', () => {
     await expect(repository.getPreferences()).resolves.toMatchObject({ readerFontSize: 19 })
   })
 
+  it('lists only libraries that hold books, and tags each book with its library', async () => {
+    await migrateDatabase(database!)
+    await insertSampleLibrary(database!)
+    await database!.runAsync(
+      `INSERT INTO libraries (id, name, created_at, updated_at) VALUES
+         ('horror', 'Horror/Thriller', '2026-08-06T11:00:00Z', '2026-08-06T11:00:00Z'),
+         ('empty', 'Nothing Here', '2026-08-06T11:00:00Z', '2026-08-06T11:00:00Z')`
+    )
+    await database!.runAsync(`UPDATE books SET library_id = 'horror' WHERE id = 'glass-orchard'`)
+    const repository = createSQLiteRepository(database!)
+
+    await expect(repository.listLibraries()).resolves.toEqual([
+      { id: 'horror', name: 'Horror/Thriller', bookCount: 1 },
+      { id: 'default-library', name: 'My Library', bookCount: 1 }
+    ])
+    const books = await repository.listBooks()
+    expect(Object.fromEntries(books.map((book) => [book.id, book.libraryId]))).toEqual({
+      'glass-orchard': 'horror',
+      'lantern-house': 'default-library'
+    })
+  })
+
   it('refuses to open a database created by a newer app version', async () => {
     await database!.execAsync(`PRAGMA user_version = ${DATABASE_VERSION + 1}`)
 

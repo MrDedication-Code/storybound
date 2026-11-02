@@ -188,6 +188,120 @@ describe('SQLite encrypted sync store', () => {
     ).resolves.toEqual({ library_id: remoteLibraryId })
   })
 
+  it('files each synced book into the library it names, across several libraries', async () => {
+    await syncStore.activateProfile(vaultId, deviceId)
+    let revision = 0
+    const change = (
+      entityType: DecryptedRemoteChange['entityType'],
+      entityId: string,
+      value: Record<string, unknown>
+    ): DecryptedRemoteChange => {
+      revision += 1
+      return {
+        mutationId: `${String(revision).padStart(8, '0')}-7777-4777-8777-777777777777`,
+        deviceId: remoteDeviceId,
+        entityType,
+        entityId,
+        operation: 'upsert',
+        remoteRevision: String(revision),
+        changedAt: '2026-08-06T11:00:00Z',
+        payload: encryptedPayload,
+        value
+      }
+    }
+    const library = (id: string, name: string): Record<string, unknown> => ({
+      id,
+      name,
+      description: '',
+      created_at: '2026-08-06T11:00:00Z',
+      updated_at: '2026-08-06T11:00:00Z',
+      deleted_at: null,
+      row_version: 1
+    })
+    const book = (id: string, libraryId: string): Record<string, unknown> => ({
+      id,
+      title: id,
+      blurb: '',
+      status: 'ongoing',
+      created_at: '2026-08-06T11:00:00Z',
+      updated_at: '2026-08-06T11:00:00Z',
+      last_opened_at: null,
+      completed_at: null,
+      total_word_count: 0,
+      is_archived: 0,
+      deleted_at: null,
+      row_version: 1,
+      subtitle: '',
+      author_name: '',
+      language_code: '',
+      source_label: '',
+      source_url: '',
+      personal_notes: '',
+      rating: null,
+      favourited_at: null,
+      pinned_at: null,
+      series_name: '',
+      series_position: null,
+      cover_style: 'classic',
+      cover_position_x: 50,
+      cover_position_y: 50,
+      library_id: libraryId
+    })
+
+    await syncStore.applyPullPage(null, '5', deviceId, [
+      change('library', 'library-one', library('library-one', 'Fantasy')),
+      change('library', 'library-two', library('library-two', 'Horror/Thriller')),
+      change('book', 'book-one', book('book-one', 'library-one')),
+      change('book', 'book-two', book('book-two', 'library-two')),
+      change('book', 'book-early', book('book-early', 'library-later'))
+    ])
+    const libraryOf = async (bookId: string): Promise<string | undefined> =>
+      (
+        await database!.getFirstAsync<{ library_id: string }>(
+          'SELECT library_id FROM books WHERE id = ?',
+          [bookId]
+        )
+      )?.library_id
+    await expect(libraryOf('book-one')).resolves.toBe('library-one')
+    await expect(libraryOf('book-two')).resolves.toBe('library-two')
+    await expect(libraryOf('book-early')).resolves.toBe('library-later')
+
+    await syncStore.applyPullPage('5', '6', deviceId, [
+      change('library', 'library-later', library('library-later', 'Arrived Later'))
+    ])
+    await expect(
+      database!.getFirstAsync<{ name: string }>(
+        `SELECT name FROM libraries WHERE id = 'library-later'`
+      )
+    ).resolves.toEqual({ name: 'Arrived Later' })
+  })
+
+  it('sends every library, and each book with its library, when this phone sets up sync', async () => {
+    await database!.runAsync(
+      `INSERT INTO libraries (id, name, created_at, updated_at)
+       VALUES ('library-two', 'Second', '2026-08-06T11:00:00Z', '2026-08-06T11:00:00Z')`
+    )
+    await database!.runAsync(
+      `UPDATE books SET library_id = 'library-two' WHERE id = 'glass-orchard'`
+    )
+    await syncStore.activateProfile(vaultId, deviceId)
+    await syncStore.queueAllLocalEntities()
+
+    const pending = await syncStore.claimPendingChanges(createMutationId)
+    expect(
+      pending
+        .filter((item) => item.entityType === 'library')
+        .map((item) => item.entityId)
+        .sort()
+    ).toEqual(['default-library', 'library-two'])
+    const books = Object.fromEntries(
+      pending
+        .filter((item) => item.entityType === 'book')
+        .map((item) => [item.entityId, (item.value as { library_id: string }).library_id])
+    )
+    expect(books).toEqual({ 'glass-orchard': 'library-two', 'lantern-house': 'default-library' })
+  })
+
   it('records a pull conflict and excludes that entity from future push claims', async () => {
     const writes = createSqlWriteCoordinator()
     const repository = createSQLiteRepository(

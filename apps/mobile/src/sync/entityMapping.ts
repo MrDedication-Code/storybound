@@ -147,7 +147,9 @@ export function normalizeRemoteEntity(
         cover_style: coverStyle,
         cover_tone: coverToneFromStyle(coverStyle),
         cover_position_x: numberValue(row, 'cover_position_x', 0, 100),
-        cover_position_y: numberValue(row, 'cover_position_y', 0, 100)
+        cover_position_y: numberValue(row, 'cover_position_y', 0, 100),
+        // Absent in payloads from older versions, which then fall back to the profile library.
+        library_id: nullableString(row, 'library_id')
       }
     }
   }

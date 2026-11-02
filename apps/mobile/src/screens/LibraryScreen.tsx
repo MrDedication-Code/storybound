@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { BookArtwork } from '../components/BookArtwork'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
-import type { AppMode, BookSummary, MobileRepository } from '../domain/contracts'
+import type { AppMode, BookSummary, LibrarySummary, MobileRepository } from '../domain/contracts'
 import { estimateReadingMinutes, formatCompactNumber } from '../domain/reading'
 import { compactCaps, literaryHeading, storyboundColors, storyboundRadii } from '../theme'
 
@@ -25,15 +25,18 @@ export function LibraryScreen({
   onOpenSync: () => void
 }): React.JSX.Element {
   const [books, setBooks] = useState<BookSummary[] | null>(null)
+  const [libraries, setLibraries] = useState<LibrarySummary[]>([])
+  const [libraryId, setLibraryId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
-    void repository
-      .listBooks()
-      .then((nextBooks) => {
-        if (active) setBooks(nextBooks)
+    void Promise.all([repository.listBooks(), repository.listLibraries()])
+      .then(([nextBooks, nextLibraries]) => {
+        if (!active) return
+        setBooks(nextBooks)
+        setLibraries(nextLibraries)
       })
       .catch((caught: unknown) => {
         if (active)
@@ -50,11 +53,15 @@ export function LibraryScreen({
   if (!books) return <LoadingScreen label="Opening your mobile library…" />
 
   const normalized = query.trim().toLocaleLowerCase()
+  const selectedLibrary = libraries.some((library) => library.id === libraryId) ? libraryId : null
+  const inLibrary = selectedLibrary
+    ? books.filter((book) => book.libraryId === selectedLibrary)
+    : books
   const filtered = normalized
-    ? books.filter((book) =>
+    ? inLibrary.filter((book) =>
         `${book.title} ${book.authorName} ${book.blurb}`.toLocaleLowerCase().includes(normalized)
       )
-    : books
+    : inLibrary
   const continueReading = books.find((book) => book.lastReadAt && book.progressPercentage < 100)
 
   return (
@@ -103,6 +110,38 @@ export function LibraryScreen({
           )
         })}
       </View>
+
+      {libraries.length > 1 ? (
+        <ScrollView
+          horizontal
+          accessibilityRole="tablist"
+          contentContainerStyle={styles.libraryTabs}
+          showsHorizontalScrollIndicator={false}
+          style={styles.libraryTabsRow}
+        >
+          {[{ id: null, name: 'All', bookCount: books.length }, ...libraries].map((library) => {
+            const selected = library.id === selectedLibrary
+            return (
+              <Pressable
+                accessibilityLabel={`${library.name}, ${library.bookCount} books`}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                key={library.id ?? 'all'}
+                style={({ pressed }) => [
+                  styles.libraryTab,
+                  selected && styles.libraryTabSelected,
+                  pressed && styles.pressed
+                ]}
+                onPress={() => setLibraryId(library.id)}
+              >
+                <Text style={[styles.libraryTabLabel, selected && styles.libraryTabLabelSelected]}>
+                  {library.name}
+                </Text>
+              </Pressable>
+            )
+          })}
+        </ScrollView>
+      ) : null}
 
       <TextInput
         accessibilityLabel="Search local library"
@@ -247,6 +286,34 @@ const styles = StyleSheet.create({
   syncGlyph: {
     color: storyboundColors.walnut,
     fontSize: 26
+  },
+  libraryTabsRow: {
+    flexGrow: 0,
+    marginBottom: 14
+  },
+  libraryTabs: {
+    gap: 8
+  },
+  libraryTab: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderColor: storyboundColors.line,
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: storyboundColors.paperRaised
+  },
+  libraryTabSelected: {
+    borderColor: storyboundColors.brass,
+    backgroundColor: storyboundColors.brass
+  },
+  libraryTabLabel: {
+    color: storyboundColors.text,
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  libraryTabLabelSelected: {
+    color: storyboundColors.paperRaised
   },
   modeSwitch: {
     flexDirection: 'row',

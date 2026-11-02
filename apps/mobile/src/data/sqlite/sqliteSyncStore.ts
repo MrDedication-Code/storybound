@@ -167,7 +167,8 @@ export class SQLiteSyncStore {
   queueAllLocalEntities(): Promise<void> {
     return this.writes.run(async () => {
       await this.database.transactionAsync(async (transaction) => {
-        const profile = await this.requireProfile(transaction)
+        // Proves sync is set up; the whole collection is uploaded, not just one library.
+        await this.requireProfile(transaction)
         const entities = [
           ...(await transaction.getAllAsync<{
             entity_type: CoreSyncEntityType
@@ -176,8 +177,7 @@ export class SQLiteSyncStore {
             changed_at: string
           }>(
             `SELECT 'library' AS entity_type, id AS entity_id, row_version, updated_at AS changed_at
-             FROM libraries WHERE id = ? AND deleted_at IS NULL`,
-            [profile.localLibraryId]
+             FROM libraries WHERE deleted_at IS NULL`
           )),
           ...(await transaction.getAllAsync<{
             entity_type: CoreSyncEntityType
@@ -186,8 +186,7 @@ export class SQLiteSyncStore {
             changed_at: string
           }>(
             `SELECT 'book' AS entity_type, id AS entity_id, row_version, updated_at AS changed_at
-             FROM books WHERE library_id = ? AND deleted_at IS NULL`,
-            [profile.localLibraryId]
+             FROM books WHERE deleted_at IS NULL`
           )),
           ...(await transaction.getAllAsync<{
             entity_type: CoreSyncEntityType
@@ -197,8 +196,7 @@ export class SQLiteSyncStore {
           }>(
             `SELECT 'chapter' AS entity_type, c.id AS entity_id, c.row_version, c.updated_at AS changed_at
              FROM chapters c JOIN books b ON b.id = c.book_id
-             WHERE b.library_id = ? AND c.deleted_at IS NULL`,
-            [profile.localLibraryId]
+             WHERE c.deleted_at IS NULL`
           )),
           ...(await transaction.getAllAsync<{
             entity_type: CoreSyncEntityType
@@ -208,9 +206,7 @@ export class SQLiteSyncStore {
           }>(
             `SELECT 'reading-state' AS entity_type, r.book_id AS entity_id, r.row_version,
                     r.updated_at AS changed_at
-             FROM reading_states r JOIN books b ON b.id = r.book_id
-             WHERE b.library_id = ?`,
-            [profile.localLibraryId]
+             FROM reading_states r JOIN books b ON b.id = r.book_id`
           ))
         ]
         for (const entity of entities) {
@@ -507,7 +503,7 @@ export class SQLiteSyncStore {
                 COALESCE(source_url, '') AS source_url,
                 COALESCE(personal_notes, '') AS personal_notes,
                 rating, favourited_at, pinned_at, COALESCE(series_name, '') AS series_name,
-                series_position, cover_style, cover_position_x, cover_position_y
+                series_position, cover_style, cover_position_x, cover_position_y, library_id
          FROM books WHERE id = ?`,
         [entityId]
       )
@@ -584,6 +580,17 @@ export class SQLiteSyncStore {
     }
 
     if (change.entityType === 'book') {
+      const libraryId =
+        typeof value.library_id === 'string' && value.library_id
+          ? value.library_id
+          : profile.localLibraryId
+      // The library record normally arrives first; if not, a placeholder holds the book until
+      // the library's own record overwrites it.
+      await transaction.runAsync(
+        `INSERT OR IGNORE INTO libraries (id, name, created_at, updated_at)
+         VALUES (?, 'Synced library', ?, ?)`,
+        [libraryId, new Date(0).toISOString(), new Date(0).toISOString()]
+      )
       await transaction.runAsync(
         `INSERT INTO books (
            id, library_id, title, subtitle, author_name, blurb, status, cover_tone,
@@ -611,14 +618,14 @@ export class SQLiteSyncStore {
            cover_position_y = excluded.cover_position_y, row_version = excluded.row_version`,
         [
           change.entityId,
-          profile.localLibraryId,
+          libraryId,
           requiredValue(value, 'title'),
           requiredValue(value, 'subtitle'),
           requiredValue(value, 'author_name'),
           requiredValue(value, 'blurb'),
           requiredValue(value, 'status'),
           requiredValue(value, 'cover_tone'),
-          profile.localLibraryId,
+          libraryId,
           requiredValue(value, 'created_at'),
           requiredValue(value, 'updated_at'),
           value.deleted_at,

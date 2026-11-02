@@ -3,6 +3,7 @@ import type {
   BookSummary,
   Chapter,
   ChapterSummary,
+  LibrarySummary,
   LocalSyncStatus,
   MobilePreferences,
   MobileRepository,
@@ -24,6 +25,7 @@ import {
 
 interface BookRow {
   id: string
+  library_id: string
   title: string
   subtitle: string
   author_name: string
@@ -57,6 +59,7 @@ interface ReadingStateRow {
 const bookSummaryQuery = `
   SELECT
     b.id,
+    b.library_id,
     b.title,
     b.subtitle,
     b.author_name,
@@ -82,6 +85,7 @@ const bookSummaryQuery = `
 function mapBook(row: BookRow): BookSummary {
   return {
     id: row.id,
+    libraryId: row.library_id,
     title: row.title,
     subtitle: row.subtitle,
     authorName: row.author_name,
@@ -214,6 +218,18 @@ export function createSQLiteRepository(
          ORDER BY (r.last_read_at IS NULL), r.last_read_at DESC, b.position, b.title COLLATE NOCASE`
       )
       return rows.map(mapBook)
+    },
+
+    async listLibraries(): Promise<LibrarySummary[]> {
+      const rows = await database.getAllAsync<{ id: string; name: string; book_count: number }>(
+        `SELECT l.id, l.name, COUNT(b.id) AS book_count
+         FROM libraries l
+         JOIN books b ON b.library_id = l.id AND b.deleted_at IS NULL
+         WHERE l.deleted_at IS NULL
+         GROUP BY l.id
+         ORDER BY l.name COLLATE NOCASE`
+      )
+      return rows.map((row) => ({ id: row.id, name: row.name, bookCount: row.book_count }))
     },
 
     async getBook(bookId: string): Promise<BookDetail> {
