@@ -302,6 +302,57 @@ describe('SQLite encrypted sync store', () => {
     expect(books).toEqual({ 'glass-orchard': 'library-two', 'lantern-house': 'default-library' })
   })
 
+  it('stores a synced cover, shows it as the book cover, and removes it again', async () => {
+    await syncStore.activateProfile(vaultId, deviceId)
+    const repository = createSQLiteRepository(database!)
+    const cover = (
+      operation: 'upsert' | 'delete',
+      revision: string,
+      value: Record<string, unknown>
+    ): DecryptedRemoteChange => ({
+      mutationId: `${revision.padStart(8, '0')}-8888-4888-8888-888888888888`,
+      deviceId: remoteDeviceId,
+      entityType: 'media-asset',
+      entityId: 'book-cover:glass-orchard',
+      operation,
+      remoteRevision: revision,
+      changedAt: '2026-08-06T12:00:00Z',
+      payload: encryptedPayload,
+      value
+    })
+
+    await syncStore.applyPullPage(null, '1', deviceId, [
+      cover('upsert', '1', {
+        book_id: 'glass-orchard',
+        mime_type: 'image/jpeg',
+        data: 'AQID',
+        row_version: 1
+      })
+    ])
+    const covered = (await repository.listBooks()).find((book) => book.id === 'glass-orchard')
+    expect(covered?.coverUri).toBe('data:image/jpeg;base64,AQID')
+    expect((await repository.getBook('glass-orchard')).coverUri).toBe('data:image/jpeg;base64,AQID')
+    expect(
+      (await repository.listBooks()).find((book) => book.id === 'lantern-house')?.coverUri
+    ).toBe(null)
+
+    await expect(
+      syncStore.applyPullPage('1', '2', deviceId, [
+        cover('upsert', '2', {
+          book_id: 'glass-orchard',
+          mime_type: 'text/html',
+          data: 'PHNjcmlwdD4=',
+          row_version: 2
+        })
+      ])
+    ).rejects.toThrow('cover image is invalid')
+
+    await syncStore.applyPullPage('1', '3', deviceId, [
+      cover('delete', '3', { deletedAt: null, rowVersion: 2 })
+    ])
+    expect((await repository.getBook('glass-orchard')).coverUri).toBeNull()
+  })
+
   it('records a pull conflict and excludes that entity from future push claims', async () => {
     const writes = createSqlWriteCoordinator()
     const repository = createSQLiteRepository(

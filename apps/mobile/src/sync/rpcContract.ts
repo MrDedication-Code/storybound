@@ -1,6 +1,11 @@
 import type { SyncKeyEnvelope } from '@storybound/contracts'
 import { isUuid } from './encoding'
-import type { CoreSyncEntityType, CoreSyncOperation } from './types'
+import {
+  BOOK_COVER_PREFIX,
+  type CoreSyncEntityType,
+  type CoreSyncOperation,
+  type RemoteSyncEntityType
+} from './types'
 
 export const PAYLOAD_ENCODING = 'aes-256-gcm-v1'
 export const PAYLOAD_SCHEMA_VERSION = 1
@@ -53,7 +58,7 @@ export type RpcPushResult =
 export interface RpcRemoteChange {
   mutationId: string
   deviceId: string
-  entityType: CoreSyncEntityType
+  entityType: RemoteSyncEntityType
   entityId: string
   operation: CoreSyncOperation
   remoteRevision: string
@@ -126,11 +131,18 @@ function nullableDate(value: unknown, message: string): string | null {
   return value === null ? null : requireDate(value, message)
 }
 
-function requireEntityType(value: unknown): CoreSyncEntityType {
+/** Null for record types this version does not handle; those are skipped, not fatal. */
+function supportedEntityType(value: unknown, entityId: unknown): RemoteSyncEntityType | null {
   if (value === 'library' || value === 'book' || value === 'chapter' || value === 'reading-state') {
     return value
   }
-  throw new Error('The sync server returned an unsupported entity type.')
+  if (value === 'media-asset' && typeof entityId === 'string') {
+    return entityId.startsWith(BOOK_COVER_PREFIX) ? value : null
+  }
+  if (typeof value !== 'string' || !value) {
+    throw new Error('The sync server returned an invalid entity type.')
+  }
+  return null
 }
 
 function requireOperation(value: unknown): CoreSyncOperation {
@@ -244,12 +256,14 @@ export function parsePullResult(value: unknown): RpcPullResult {
     throw new Error('The sync server returned an invalid pull result.')
   }
   return {
-    changes: row.changes.map((change) => {
+    changes: row.changes.flatMap((change) => {
       const item = asObject(change, 'The sync server returned an invalid remote change.')
+      const entityType = supportedEntityType(item.entityType, item.entityId)
+      if (!entityType) return []
       return {
         mutationId: requireUuid(item.mutationId, 'The remote mutation identifier is invalid.'),
         deviceId: requireUuid(item.deviceId, 'The remote device identifier is invalid.'),
-        entityType: requireEntityType(item.entityType),
+        entityType,
         entityId: requireString(item.entityId, 'The remote entity identifier is invalid.', 1, 240),
         operation: requireOperation(item.operation),
         remoteRevision: requireRevision(item.remoteRevision, 'The remote revision is invalid.'),

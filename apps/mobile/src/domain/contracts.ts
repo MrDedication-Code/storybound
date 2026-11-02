@@ -23,6 +23,8 @@ export interface BookSummary {
   blurb: string
   status: BookStatus
   coverTone: 'forest' | 'moonlit' | 'ember'
+  /** A synced custom cover as a data URI, or null to draw the generated cover. */
+  coverUri: string | null
   chapterCount: number
   totalWordCount: number
   progressPercentage: number

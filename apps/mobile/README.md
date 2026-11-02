@@ -41,7 +41,7 @@ The mobile client implements the live Storybound RPC contract:
 - `pull_storybound_changes`
 - `push_storybound_mutations`
 
-Library, book, chapter, and reading-state payloads use the same canonical AES-256-GCM protocol and recovery-code verifier as desktop. The vault key never leaves the device unencrypted. Server revisions and cursors remain decimal strings so PostgreSQL `bigint` values are never truncated by JavaScript numbers.
+Library, book, chapter, reading-state, and book-cover payloads use the same canonical AES-256-GCM protocol and recovery-code verifier as desktop. The vault key never leaves the device unencrypted. Covers are stored in the `book_covers` table and shown as an inline image; a book without one keeps its generated cover. Server revisions and cursors remain decimal strings so PostgreSQL `bigint` values are never truncated by JavaScript numbers.
 
 ## Included flow
 

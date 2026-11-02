@@ -2,7 +2,7 @@ import type { SqlDatabasePort } from './databasePort'
 import { seedLibrary } from './seedData'
 
 export const DATABASE_NAME = 'storybound.db'
-export const DATABASE_VERSION = 3
+export const DATABASE_VERSION = 4
 
 const schemaVersionOne = `
 CREATE TABLE IF NOT EXISTS libraries (
@@ -161,6 +161,17 @@ CREATE TABLE app_preferences (
 );
 `
 
+// Synced cover images, stored as base64 so the reader can show them without file access.
+const schemaVersionFour = `
+CREATE TABLE book_covers (
+  book_id TEXT PRIMARY KEY NOT NULL,
+  mime_type TEXT NOT NULL,
+  data TEXT NOT NULL,
+  row_version INTEGER NOT NULL CHECK (row_version >= 1),
+  updated_at TEXT NOT NULL
+);
+`
+
 async function createFirstLibrary(transaction: SqlDatabasePort): Promise<void> {
   await transaction.runAsync(
     `INSERT OR IGNORE INTO libraries (id, name, created_at, updated_at)
@@ -200,6 +211,11 @@ export async function migrateDatabase(database: SqlDatabasePort): Promise<void> 
     if (currentVersion < 3) {
       await transaction.execAsync(schemaVersionThree)
       await transaction.execAsync('PRAGMA user_version = 3')
+    }
+
+    if (currentVersion < 4) {
+      await transaction.execAsync(schemaVersionFour)
+      await transaction.execAsync('PRAGMA user_version = 4')
     }
   })
 }

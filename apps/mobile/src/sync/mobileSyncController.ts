@@ -49,7 +49,7 @@ import {
 } from './rpcContract'
 import { ChunkedSecureStorage } from './secureStore'
 import { connectionPhase } from './state'
-import type { MobileSyncController, VaultCredentials } from './types'
+import type { MobileSyncController, RemoteSyncEntityType, VaultCredentials } from './types'
 
 const VAULT_CREDENTIAL_KEY = 'storybound.vault.v1'
 const DEFAULT_DEVICE_NAME = 'Storybound mobile'
@@ -155,7 +155,7 @@ export function parseVaultCredentials(raw: string): VaultCredentials | null {
 function associatedData(
   vaultId: string,
   mutationId: string,
-  entityType: PendingSyncChange['entityType'],
+  entityType: RemoteSyncEntityType,
   entityId: string,
   operation: PendingSyncChange['operation'],
   schemaVersion = PAYLOAD_SCHEMA_VERSION

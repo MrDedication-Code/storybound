@@ -158,6 +158,34 @@ describe('live RPC validation', () => {
     expect(parsed.changes[0].remoteRevision).toBe('9223372036854775806')
   })
 
+  it('keeps book covers, skips record types it does not handle, and accepts server offsets', () => {
+    const change = (entityType: string, entityId: string): Record<string, unknown> => ({
+      mutationId,
+      deviceId,
+      entityType,
+      entityId,
+      operation: 'upsert',
+      remoteRevision: '5',
+      changedAt: '2026-08-06T12:00:00.123+00:00',
+      payload: encryptedPayload
+    })
+    const parsed = parsePullResult({
+      changes: [
+        change('media-asset', 'book-cover:book-1'),
+        change('story-entity', 'from-a-newer-version'),
+        change('media-asset', 'audio:not-a-cover'),
+        change('chapter', 'chapter-1')
+      ],
+      nextCursor: '5',
+      hasMore: false
+    })
+    expect(parsed.changes.map((item) => `${item.entityType}:${item.entityId}`)).toEqual([
+      'media-asset:book-cover:book-1',
+      'chapter:chapter-1'
+    ])
+    expect(parsed.nextCursor).toBe('5')
+  })
+
   it('validates bootstrap and push responses instead of trusting RPC JSON', () => {
     expect(
       parseBootstrap({

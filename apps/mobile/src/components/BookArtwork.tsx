@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native'
+import { Image, StyleSheet, Text, View } from 'react-native'
 import type { BookSummary } from '../domain/contracts'
 import { storyboundRadii, storyboundShadow } from '../theme'
 
@@ -12,9 +12,22 @@ export function BookArtwork({
   book,
   size = 'card'
 }: {
-  book: Pick<BookSummary, 'title' | 'coverTone'>
+  book: Pick<BookSummary, 'title' | 'coverTone' | 'coverUri'>
   size?: 'card' | 'hero' | 'compact'
 }): React.JSX.Element {
+  const sizeStyle =
+    size === 'hero' ? styles.hero : size === 'compact' ? styles.compact : styles.card
+  if (book.coverUri) {
+    return (
+      <View
+        accessibilityLabel={`Cover of ${book.title}`}
+        accessibilityRole="image"
+        style={[styles.cover, styles.image, sizeStyle]}
+      >
+        <Image resizeMode="cover" source={{ uri: book.coverUri }} style={StyleSheet.absoluteFill} />
+      </View>
+    )
+  }
   const tone = tones[book.coverTone]
   const initials = book.title
     .split(/\s+/u)
@@ -26,11 +39,7 @@ export function BookArtwork({
     <View
       accessibilityLabel={`Cover of ${book.title}`}
       accessibilityRole="image"
-      style={[
-        styles.cover,
-        size === 'hero' ? styles.hero : size === 'compact' ? styles.compact : styles.card,
-        { backgroundColor: tone.from }
-      ]}
+      style={[styles.cover, sizeStyle, { backgroundColor: tone.from }]}
     >
       <View style={[styles.rule, { backgroundColor: tone.ink }]} />
       <Text numberOfLines={size === 'compact' ? 2 : 4} style={[styles.title, { color: tone.ink }]}>
@@ -53,6 +62,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     borderWidth: 1,
     ...storyboundShadow
+  },
+  image: {
+    padding: 0
   },
   card: {
     width: 104,

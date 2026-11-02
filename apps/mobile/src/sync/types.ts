@@ -6,6 +6,9 @@ import type {
 } from '@storybound/contracts'
 
 export type CoreSyncEntityType = 'library' | 'book' | 'chapter' | 'reading-state'
+/** Received but never sent from the phone: book covers arrive as `media-asset` records. */
+export type RemoteSyncEntityType = CoreSyncEntityType | 'media-asset'
+export const BOOK_COVER_PREFIX = 'book-cover:'
 export type CoreSyncOperation = 'upsert' | 'delete'
 
 export interface MobileSyncController {

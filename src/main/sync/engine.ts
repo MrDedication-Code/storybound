@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto'
 import { decryptSyncPayload, encryptSyncPayload, type SyncAssociatedData } from '@storybound/sync'
 import type { SyncCiphertext, SyncEntityType } from '@storybound/contracts'
 import { StoryboundError } from '../errors'
-import { applyLocalSyncEntity, listLocalSyncEntities } from './entities'
+import {
+  applyLocalSyncEntity,
+  BOOK_COVER_PREFIX,
+  isDesktopSyncEntityType,
+  listLocalSyncEntities,
+  type SyncMediaOptions
+} from './entities'
 import type {
   EncryptedSyncPayload,
   PushMutationResult,
@@ -102,7 +108,8 @@ export class DesktopSyncEngine {
     private readonly profileId: string,
     private readonly deviceId: string,
     private readonly vaultKey: Uint8Array,
-    private readonly keyEpoch: number
+    private readonly keyEpoch: number,
+    private readonly media: SyncMediaOptions | null = null
   ) {
     if (vaultKey.length !== 32) throw new TypeError('Sync vault keys must contain 32 bytes.')
     this.repository = new SyncRepository(database)
@@ -159,7 +166,8 @@ export class DesktopSyncEngine {
           conflict.entity_type,
           conflict.entity_id,
           envelope.operation,
-          value
+          value,
+          this.media
         )
         this.database
           .prepare(
@@ -290,6 +298,7 @@ export class DesktopSyncEngine {
 
     this.repository.transaction(() => {
       for (const entity of current) {
+        if (entity.entityType === 'media-asset' && !this.media) continue
         const state = this.entityState(profile.library_id, entity.entityType, entity.entityId)
         const alreadyQueued = Boolean(
           this.database
@@ -301,6 +310,15 @@ export class DesktopSyncEngine {
             .get(profile.library_id, entity.entityType, entity.entityId, entity.rowVersion)
         )
         if (state?.local_row_version === entity.rowVersion || alreadyQueued) continue
+        let value = entity.value
+        if (!entity.deleted && entity.load) {
+          try {
+            value = entity.load(this.media!)
+          } catch {
+            // An unreadable cover file is retried on the next sync rather than blocking the rest.
+            continue
+          }
+        }
         this.enqueueEncrypted(profile, {
           entityType: entity.entityType,
           entityId: entity.entityId,
@@ -309,8 +327,8 @@ export class DesktopSyncEngine {
           changedAt: entity.changedAt,
           baseRemoteRevision: state?.remote_revision ?? null,
           value: entity.deleted
-            ? { deletedAt: entity.value.deleted_at, rowVersion: entity.rowVersion }
-            : entity.value
+            ? { deletedAt: entity.value.deleted_at ?? null, rowVersion: entity.rowVersion }
+            : value
         })
       }
 
@@ -536,6 +554,14 @@ export class DesktopSyncEngine {
     change: RemoteSyncChange,
     syncedAt: string
   ): void {
+    // Records this version does not understand (from a newer device) are skipped, not fatal.
+    if (
+      !isDesktopSyncEntityType(change.entityType) ||
+      (change.entityType === 'media-asset' &&
+        (!this.media || !change.entityId.startsWith(BOOK_COVER_PREFIX)))
+    ) {
+      return
+    }
     const state = this.entityState(profile.library_id, change.entityType, change.entityId)
     if (state?.remote_revision === change.remoteRevision) return
     if (state?.dirty || state?.conflict_state === 'open') {
@@ -561,7 +587,8 @@ export class DesktopSyncEngine {
       change.entityType,
       change.entityId,
       change.operation,
-      value
+      value,
+      this.media
     )
     database
       .prepare(

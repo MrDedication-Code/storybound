@@ -155,12 +155,12 @@ import {
   openStoryboundDatabase,
   type StoryboundPaths
 } from './database'
+import { COVER_EXTENSIONS, managedCoverPath, safeRemoveManagedCover } from './coverFiles'
 import { StoryboundError } from './errors'
 
 const MAX_COVER_BYTES = 15 * 1024 * 1024
 const MAX_IMPORT_BYTES = 512 * 1024 * 1024
 const MAX_EXPORT_BYTES = 500 * 1024 * 1024
-const COVER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 const RESTORE_REQUIRED_COLUMNS = {
   books: [
     'id',
@@ -669,32 +669,6 @@ function safeRemove(path: string): void {
   }
 }
 
-function managedCoverPath(mediaDirectory: string, filename: string): string | null {
-  if (
-    !filename ||
-    filename.includes('/') ||
-    filename.includes('\\') ||
-    filename.includes('\u0000') ||
-    basename(filename) !== filename ||
-    !COVER_EXTENSIONS.has(extname(filename).toLocaleLowerCase())
-  ) {
-    return null
-  }
-  const root = resolve(mediaDirectory)
-  const candidate = resolve(root, filename)
-  return dirname(candidate) === root ? candidate : null
-}
-
-function safeRemoveManagedCover(mediaDirectory: string, filename: string): void {
-  const path = managedCoverPath(mediaDirectory, filename)
-  if (!path) return
-  try {
-    rmSync(path, { force: true })
-  } catch {
-    // A missing or non-file cover falls back to the generated placeholder.
-  }
-}
-
 function toFtsQuery(term: string): string {
   const tokens = term.match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu) ?? []
   return tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(' AND ')
@@ -1093,7 +1067,10 @@ export class StoryboundStore {
       writeFileSync(temporary, source, { flag: 'wx' })
       renameSync(temporary, destination)
       this.database
-        .prepare('UPDATE books SET cover_image_path = ?, updated_at = ? WHERE id = ?')
+        .prepare(
+          `UPDATE books SET cover_image_path = ?, updated_at = ?, cover_version = cover_version + 1
+           WHERE id = ?`
+        )
         .run(filename, now(), bookId)
     } catch (error) {
       safeRemove(temporary)
@@ -1108,7 +1085,10 @@ export class StoryboundStore {
     const bookId = idSchema.parse(id)
     const book = this.requireBook(bookId)
     this.database
-      .prepare('UPDATE books SET cover_image_path = NULL, updated_at = ? WHERE id = ?')
+      .prepare(
+        `UPDATE books SET cover_image_path = NULL, updated_at = ?,
+           cover_version = cover_version + 1 WHERE id = ?`
+      )
       .run(now(), bookId)
     if (book.cover_image_path) safeRemoveManagedCover(this.paths.media, book.cover_image_path)
     return this.getBook(bookId)
@@ -3526,6 +3506,11 @@ export class StoryboundStore {
             importedAt,
             manifest.book.completedAt
           )
+        this.database
+          .prepare(
+            `UPDATE books SET cover_version = 1 WHERE id = ? AND cover_image_path IS NOT NULL`
+          )
+          .run(newBookId)
         for (const [position, chapter] of [...manifest.chapters]
           .sort((left, right) => left.position - right.position)
           .entries()) {

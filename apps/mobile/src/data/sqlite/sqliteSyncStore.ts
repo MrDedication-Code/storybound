@@ -2,7 +2,12 @@ import type { SyncRuntimeStatus } from '@storybound/contracts'
 import type { SqlDatabasePort, SqlWriteCoordinator } from './databasePort'
 import { normalizeRemoteEntity } from '../../sync/entityMapping'
 import type { RpcPushResult, RpcRemoteChange } from '../../sync/rpcContract'
-import type { CoreSyncEntityType, CoreSyncOperation } from '../../sync/types'
+import {
+  BOOK_COVER_PREFIX,
+  type CoreSyncEntityType,
+  type CoreSyncOperation,
+  type RemoteSyncEntityType
+} from '../../sync/types'
 
 export interface MobileSyncProfile {
   vaultId: string
@@ -533,6 +538,10 @@ export class SQLiteSyncStore {
     profile: MobileSyncProfile,
     change: DecryptedRemoteChange
   ): Promise<void> {
+    if (change.entityType === 'media-asset') {
+      await applyBookCover(transaction, change)
+      return
+    }
     if (change.operation === 'delete') {
       const deletion = deletionValue(change.value)
       if (change.entityType === 'reading-state') {
@@ -706,13 +715,22 @@ export class SQLiteSyncStore {
   }
 
   private remoteRowVersion(change: DecryptedRemoteChange): number {
+    if (change.entityType === 'media-asset') {
+      // Cover deletions from earlier desktop builds carry no date, so only the version is read.
+      const value = (change.value ?? {}) as Record<string, unknown>
+      const rowVersion = change.operation === 'delete' ? value.rowVersion : value.row_version
+      if (typeof rowVersion !== 'number' || !Number.isSafeInteger(rowVersion) || rowVersion < 1) {
+        throw new Error('The synced cover version is invalid.')
+      }
+      return rowVersion
+    }
     if (change.operation === 'delete') return deletionValue(change.value).rowVersion
     return normalizeRemoteEntity(change.entityType, change.entityId, change.value).rowVersion
   }
 
   private async saveEntityState(
     transaction: SqlDatabasePort,
-    entityType: CoreSyncEntityType,
+    entityType: RemoteSyncEntityType,
     entityId: string,
     remoteRevision: string,
     localRowVersion: number,
@@ -732,7 +750,7 @@ export class SQLiteSyncStore {
 
   private async recordConflict(
     transaction: SqlDatabasePort,
-    entityType: CoreSyncEntityType,
+    entityType: RemoteSyncEntityType,
     entityId: string,
     localMutationId: string | null,
     remoteMutationId: string,
@@ -754,4 +772,44 @@ export class SQLiteSyncStore {
       [entityType, entityId, localMutationId, remoteMutationId, remoteRevision, message, createdAt]
     )
   }
+}
+
+const COVER_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+// Base64 of the 15 MB desktop limit, rounded up.
+const MAX_COVER_BASE64_LENGTH = 20 * 1024 * 1024
+
+/** Stores (or removes) a synced book cover; covers are only received, never sent. */
+async function applyBookCover(
+  transaction: SqlDatabasePort,
+  change: DecryptedRemoteChange
+): Promise<void> {
+  const bookId = change.entityId.slice(BOOK_COVER_PREFIX.length)
+  if (change.operation === 'delete') {
+    await transaction.runAsync('DELETE FROM book_covers WHERE book_id = ?', [bookId])
+    return
+  }
+  const value = (change.value ?? {}) as Record<string, unknown>
+  const rowVersion = value.row_version
+  if (
+    value.book_id !== bookId ||
+    typeof value.mime_type !== 'string' ||
+    !COVER_MIME_TYPES.has(value.mime_type) ||
+    typeof value.data !== 'string' ||
+    !value.data ||
+    value.data.length > MAX_COVER_BASE64_LENGTH ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(value.data) ||
+    typeof rowVersion !== 'number' ||
+    !Number.isSafeInteger(rowVersion) ||
+    rowVersion < 1
+  ) {
+    throw new Error('The synced cover image is invalid.')
+  }
+  await transaction.runAsync(
+    `INSERT INTO book_covers (book_id, mime_type, data, row_version, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (book_id) DO UPDATE SET
+       mime_type = excluded.mime_type, data = excluded.data,
+       row_version = excluded.row_version, updated_at = excluded.updated_at`,
+    [bookId, value.mime_type, value.data, rowVersion, change.changedAt]
+  )
 }

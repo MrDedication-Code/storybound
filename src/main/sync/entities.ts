@@ -1,13 +1,43 @@
 import type Database from 'better-sqlite3'
+import { randomUUID } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { SyncEntityType } from '@storybound/contracts'
+import { managedCoverPath, safeRemoveManagedCover } from '../coverFiles'
 import { StoryboundError } from '../errors'
 
 export const DESKTOP_SYNC_ENTITY_TYPES = [
   'library',
   'book',
   'chapter',
-  'reading-state'
+  'reading-state',
+  'media-asset'
 ] as const satisfies readonly SyncEntityType[]
+
+export function isDesktopSyncEntityType(value: string): value is DesktopSyncEntityType {
+  return (DESKTOP_SYNC_ENTITY_TYPES as readonly string[]).includes(value)
+}
+
+/** Book covers sync as `media-asset` records keyed by this prefix plus the book id. */
+export const BOOK_COVER_PREFIX = 'book-cover:'
+const COVER_MIME_TYPES = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp'
+} as const
+const MAX_SYNCED_COVER_BYTES = 15 * 1024 * 1024
+
+export interface EncodedCover {
+  mimeType: keyof typeof COVER_MIME_TYPES
+  data: Buffer
+}
+
+/** How this device reads and writes cover images; absent where covers cannot be handled. */
+export interface SyncMediaOptions {
+  mediaPath: string
+  /** Shrinks a cover image file for sync. */
+  encodeCover(path: string): EncodedCover
+}
 
 export type DesktopSyncEntityType = (typeof DESKTOP_SYNC_ENTITY_TYPES)[number]
 
@@ -19,6 +49,8 @@ export interface LocalSyncEntity {
   changedAt: string
   deleted: boolean
   value: Record<string, unknown>
+  /** Builds the payload only when the record is actually sent (covers are expensive). */
+  load?: (media: SyncMediaOptions) => Record<string, unknown>
 }
 
 const LIBRARY_COLUMNS = [
@@ -190,12 +222,89 @@ export function listLocalSyncEntities(
     )
     .all() as Array<Record<string, unknown>>
 
+  const covers = database
+    .prepare(
+      `SELECT id, cover_image_path, cover_version, updated_at FROM books WHERE cover_version > 0`
+    )
+    .all() as Array<{
+    id: string
+    cover_image_path: string | null
+    cover_version: number
+    updated_at: string
+  }>
+
   return [
     ...libraries.map((value) => localEntity(scopeLibraryId, 'library', 'id', value)),
     ...books.map((value) => localEntity(scopeLibraryId, 'book', 'id', value)),
     ...chapters.map((value) => localEntity(scopeLibraryId, 'chapter', 'id', value)),
-    ...reading.map((value) => localEntity(scopeLibraryId, 'reading-state', 'book_id', value))
+    ...reading.map((value) => localEntity(scopeLibraryId, 'reading-state', 'book_id', value)),
+    ...covers.map((cover): LocalSyncEntity => ({
+      libraryId: scopeLibraryId,
+      entityType: 'media-asset',
+      entityId: `${BOOK_COVER_PREFIX}${cover.id}`,
+      rowVersion: cover.cover_version,
+      changedAt: cover.updated_at,
+      deleted: cover.cover_image_path === null,
+      // A removed cover is sent as a deletion dated when the book last changed.
+      value: {
+        book_id: cover.id,
+        row_version: cover.cover_version,
+        deleted_at: cover.cover_image_path === null ? cover.updated_at : null
+      },
+      load: (media) => {
+        const path = cover.cover_image_path
+          ? managedCoverPath(media.mediaPath, cover.cover_image_path)
+          : null
+        if (!path) throw new StoryboundError('FILE_ERROR', 'The cover image file is missing.')
+        const encoded = media.encodeCover(path)
+        return {
+          book_id: cover.id,
+          mime_type: encoded.mimeType,
+          data: encoded.data.toString('base64'),
+          row_version: cover.cover_version
+        }
+      }
+    }))
   ]
+}
+
+function applyCover(
+  database: Database.Database,
+  bookId: string,
+  operation: 'upsert' | 'delete',
+  value: Record<string, unknown>,
+  media: SyncMediaOptions
+): number {
+  const rowVersion =
+    operation === 'delete'
+      ? typeof value.rowVersion === 'number'
+        ? value.rowVersion
+        : 1
+      : requirePositiveVersion(value)
+  const current = database
+    .prepare('SELECT cover_image_path FROM books WHERE id = ?')
+    .get(bookId) as { cover_image_path: string | null } | undefined
+  if (!current) return rowVersion
+
+  let filename: string | null = null
+  if (operation === 'upsert') {
+    if (requireString(value, 'book_id') !== bookId) {
+      throw new StoryboundError('VALIDATION_ERROR', 'The synced cover does not match its book.')
+    }
+    const extension = COVER_MIME_TYPES[value.mime_type as keyof typeof COVER_MIME_TYPES]
+    const data = Buffer.from(requireString(value, 'data'), 'base64')
+    if (!extension || data.length === 0 || data.length > MAX_SYNCED_COVER_BYTES) {
+      throw new StoryboundError('VALIDATION_ERROR', 'The synced cover image is invalid.')
+    }
+    filename = `${randomUUID()}${extension}`
+    writeFileSync(join(media.mediaPath, filename), data, { flag: 'wx' })
+  }
+  // cover_version follows the sender so this device does not send the same cover back.
+  database
+    .prepare('UPDATE books SET cover_image_path = ?, cover_version = ? WHERE id = ?')
+    .run(filename, rowVersion, bookId)
+  if (current.cover_image_path) safeRemoveManagedCover(media.mediaPath, current.cover_image_path)
+  return rowVersion
 }
 
 function localEntity(
@@ -225,13 +334,20 @@ export function applyLocalSyncEntity(
   entityType: string,
   entityId: string,
   operation: 'upsert' | 'delete',
-  decryptedValue: unknown
+  decryptedValue: unknown,
+  media: SyncMediaOptions | null = null
 ): number {
-  if (!DESKTOP_SYNC_ENTITY_TYPES.includes(entityType as DesktopSyncEntityType)) {
+  if (!isDesktopSyncEntityType(entityType)) {
     throw new StoryboundError('VALIDATION_ERROR', `Unsupported synced entity: ${entityType}`)
   }
 
   const value = asRecord(decryptedValue)
+  if (entityType === 'media-asset') {
+    if (!entityId.startsWith(BOOK_COVER_PREFIX) || !media) {
+      throw new StoryboundError('VALIDATION_ERROR', `Unsupported synced media: ${entityId}`)
+    }
+    return applyCover(database, entityId.slice(BOOK_COVER_PREFIX.length), operation, value, media)
+  }
   if (operation === 'delete') {
     const deletedAt =
       typeof value.deletedAt === 'string' ? value.deletedAt : new Date().toISOString()
@@ -239,7 +355,9 @@ export function applyLocalSyncEntity(
       database.prepare('DELETE FROM reading_states WHERE book_id = ?').run(entityId)
       return 1
     }
-    const table = { library: 'libraries', book: 'books', chapter: 'chapters' }[entityType]
+    const table = { library: 'libraries', book: 'books', chapter: 'chapters' }[
+      entityType as 'library' | 'book' | 'chapter'
+    ]
     database.prepare(`UPDATE ${table} SET deleted_at = ? WHERE id = ?`).run(deletedAt, entityId)
     return typeof value.rowVersion === 'number' ? value.rowVersion : 1
   }

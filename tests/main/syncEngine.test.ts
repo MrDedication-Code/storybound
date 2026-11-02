@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,6 +9,7 @@ import {
   applyLocalSyncEntity,
   DesktopSyncEngine,
   listLocalSyncEntities,
+  type EncodedCover,
   type PullSyncRequest,
   type PullSyncResponse,
   type PushSyncRequest,
@@ -91,10 +92,17 @@ class MemoryProvider implements SyncProvider {
   }
 }
 
+const mediaFolders = new WeakMap<Database.Database, string>()
+function mediaFolderOf(database: Database.Database): string {
+  return mediaFolders.get(database)!
+}
+
 async function databaseWithProfile(deviceId: string): Promise<Database.Database> {
   const directory = mkdtempSync(join(tmpdir(), 'storybound-sync-engine-test-'))
   temporaryDirectories.push(directory)
-  const database = await openStoryboundDatabase(createStoryboundPaths(directory))
+  const paths = createStoryboundPaths(directory)
+  const database = await openStoryboundDatabase(paths)
+  mediaFolders.set(database, paths.media)
   databases.push(database)
   database
     .prepare('INSERT INTO devices (id, display_name, created_at, last_seen_at) VALUES (?, ?, ?, ?)')
@@ -173,6 +181,96 @@ describe('DesktopSyncEngine', () => {
     // A settled collection does not bounce changes back and forth.
     expect((await sourceEngine.run()).pushed).toBe(0)
     expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
+  it('syncs a book cover and its removal without echoing it back', async () => {
+    const provider = new MemoryProvider()
+    const key = Uint8Array.from({ length: 32 }, (_, index) => index + 3)
+    const encodeCover = (path: string): EncodedCover => ({
+      mimeType: 'image/jpeg',
+      data: readFileSync(path)
+    })
+    const source = await databaseWithProfile(DEVICE_A)
+    const sourceMedia = mediaFolderOf(source)
+    source
+      .prepare(
+        `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+         VALUES ('book-cover', 'Covered', '', 'ongoing', ?, ?, 0)`
+      )
+      .run(NOW, NOW)
+    writeFileSync(join(sourceMedia, 'original.jpg'), Buffer.from('fake-jpeg-bytes'))
+    source.prepare(`UPDATE books SET cover_image_path = 'original.jpg', cover_version = 1`).run()
+
+    const sourceEngine = new DesktopSyncEngine(source, provider, PROFILE_ID, DEVICE_A, key, 1, {
+      mediaPath: sourceMedia,
+      encodeCover
+    })
+    await sourceEngine.run()
+    expect(
+      provider.changes.some(
+        (change) =>
+          change.entityType === 'media-asset' && change.entityId === 'book-cover:book-cover'
+      )
+    ).toBe(true)
+
+    const target = await databaseWithProfile(DEVICE_B)
+    const targetMedia = mediaFolderOf(target)
+    const targetEngine = new DesktopSyncEngine(target, provider, PROFILE_ID, DEVICE_B, key, 1, {
+      mediaPath: targetMedia,
+      encodeCover
+    })
+    await targetEngine.run()
+    const received = target
+      .prepare(`SELECT cover_image_path, cover_version FROM books WHERE id = 'book-cover'`)
+      .get() as { cover_image_path: string; cover_version: number }
+    expect(received.cover_version).toBe(1)
+    expect(readFileSync(join(targetMedia, received.cover_image_path)).toString()).toBe(
+      'fake-jpeg-bytes'
+    )
+    expect((await sourceEngine.run()).pushed).toBe(0)
+    expect((await targetEngine.run()).pushed).toBe(0)
+
+    source
+      .prepare(`UPDATE books SET cover_image_path = NULL, cover_version = cover_version + 1`)
+      .run()
+    const removal = listLocalSyncEntities(source, LIBRARY_ID).find(
+      (entity) => entity.entityType === 'media-asset'
+    )
+    expect(removal).toMatchObject({ deleted: true, value: { deleted_at: expect.any(String) } })
+    await sourceEngine.run()
+    await targetEngine.run()
+    expect(
+      target.prepare(`SELECT cover_image_path FROM books WHERE id = 'book-cover'`).pluck().get()
+    ).toBeNull()
+    expect(existsSync(join(targetMedia, received.cover_image_path))).toBe(false)
+  })
+
+  it('skips record types this version does not understand instead of failing', async () => {
+    const provider = new MemoryProvider()
+    const key = Uint8Array.from({ length: 32 }, (_, index) => index + 11)
+    const source = await databaseWithProfile(DEVICE_A)
+    source
+      .prepare(
+        `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+         VALUES ('book-known', 'Known', '', 'ongoing', ?, ?, 0)`
+      )
+      .run(NOW, NOW)
+    await new DesktopSyncEngine(source, provider, PROFILE_ID, DEVICE_A, key, 1).run()
+    provider.changes.unshift({
+      ...provider.changes[0],
+      mutationId: '99999999-9999-4999-8999-999999999999',
+      entityType: 'story-entity',
+      entityId: 'from-a-newer-version'
+    })
+    provider.changes.forEach((change, index) => (change.remoteRevision = String(index + 1)))
+
+    const target = await databaseWithProfile(DEVICE_B)
+    await expect(
+      new DesktopSyncEngine(target, provider, PROFILE_ID, DEVICE_B, key, 1).run()
+    ).resolves.toMatchObject({ pushed: 0 })
+    expect(target.prepare(`SELECT title FROM books WHERE id = 'book-known'`).pluck().get()).toBe(
+      'Known'
+    )
   })
 
   it('sends a book moved to Trash, and restored from it, to other devices', async () => {

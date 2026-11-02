@@ -30,6 +30,7 @@ import { DesktopSyncEngine, type SyncEngineSummary } from '../sync'
 import { loadStoryboundCloudConfig, type StoryboundCloudConfig } from './config'
 import { ElectronCredentialProtector } from './electronProtector'
 import { SecureCredentialStorage } from './secureCredentials'
+import { encodeCoverForSync } from './coverEncoder'
 import { createStoryboundSupabaseClient } from './supabaseClient'
 import { SupabaseSyncProvider } from './supabaseProvider'
 
@@ -624,7 +625,8 @@ export class StoryboundSyncController {
       credentials.profileId,
       credentials.deviceId,
       key,
-      credentials.keyEpoch
+      credentials.keyEpoch,
+      { mediaPath: this.store.paths.media, encodeCover: encodeCoverForSync }
     )
     this.lastRuntimeError = null
   }

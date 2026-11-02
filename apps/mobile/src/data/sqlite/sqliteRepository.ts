@@ -32,6 +32,7 @@ interface BookRow {
   blurb: string
   status: BookSummary['status']
   cover_tone: BookSummary['coverTone']
+  cover_uri: string | null
   chapter_count: number
   total_word_count: number
   progress_percentage: number
@@ -66,6 +67,8 @@ const bookSummaryQuery = `
     b.blurb,
     b.status,
     b.cover_tone,
+    CASE WHEN bc.book_id IS NULL THEN NULL
+      ELSE 'data:' || bc.mime_type || ';base64,' || bc.data END AS cover_uri,
     (
       SELECT COUNT(*)
       FROM chapters c
@@ -80,6 +83,7 @@ const bookSummaryQuery = `
     r.last_read_at
   FROM books b
   LEFT JOIN reading_states r ON r.book_id = b.id
+  LEFT JOIN book_covers bc ON bc.book_id = b.id
 `
 
 function mapBook(row: BookRow): BookSummary {
@@ -92,6 +96,7 @@ function mapBook(row: BookRow): BookSummary {
     blurb: row.blurb,
     status: row.status,
     coverTone: row.cover_tone,
+    coverUri: row.cover_uri,
     chapterCount: row.chapter_count,
     totalWordCount: row.total_word_count,
     progressPercentage: row.progress_percentage,

@@ -839,6 +839,17 @@ export const migrations: readonly Migration[] = [
     sql: `
       UPDATE books SET row_version = row_version + 1 WHERE deleted_at IS NOT NULL;
     `
+  },
+  {
+    version: 12,
+    name: 'sync-book-covers',
+    // Covers sync as their own records, versioned separately from the book so a cover change
+    // does not resend the book and a book edit does not resend the image.
+    sql: `
+      ALTER TABLE books ADD COLUMN cover_version INTEGER NOT NULL DEFAULT 0
+        CHECK(cover_version >= 0);
+      UPDATE books SET cover_version = 1 WHERE cover_image_path IS NOT NULL;
+    `
   }
 ]
 
