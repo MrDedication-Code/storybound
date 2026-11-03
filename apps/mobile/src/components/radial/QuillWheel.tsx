@@ -139,7 +139,9 @@ export function QuillWheel({
         {...controller.responder.panHandlers}
       >
         <View pointerEvents="none">
-          <Text style={styles.fabGlyph}>{open ? '+' : '✒\uFE0E'}</Text>
+          <Text style={[styles.fabGlyph, !open && styles.quillGlyph]}>
+            {open ? '+' : '✒\uFE0E'}
+          </Text>
         </View>
       </Animated.View>
     </View>
@@ -298,7 +300,13 @@ const styles = StyleSheet.create({
   fabGlyph: {
     color: storyboundColors.brassBright,
     fontSize: 28,
-    lineHeight: 32
+    lineHeight: 28,
+    includeFontPadding: false,
+    textAlign: 'center'
+  },
+  // The nib symbol sits low in its font; measured on Android, this centres it.
+  quillGlyph: {
+    transform: [{ translateY: -4 }]
   },
   caption: {
     position: 'absolute',
