@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Keyboard, Platform, type ViewInstance } from 'react-native'
+import { Keyboard, Platform, StatusBar, type ViewInstance } from 'react-native'
 
 /**
  * How much of a view the on-screen keyboard covers. Android may or may not shrink the window
@@ -21,7 +21,10 @@ export function useKeyboardOverlap(view: React.RefObject<ViewInstance | null>): 
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
     const show = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardTop(event.endCoordinates.screenY)
+      // The keyboard reports its top from the top of the screen, but Android measures views
+      // from below the status bar.
+      const statusBar = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+      setKeyboardTop(event.endCoordinates.screenY - statusBar)
       // Android may have resized the window for the keyboard; measure after it settles.
       setTimeout(remeasure, 60)
     })

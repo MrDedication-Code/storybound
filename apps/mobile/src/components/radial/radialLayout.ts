@@ -54,8 +54,8 @@ export function layoutAround(
   bounds: { width: number; height: number },
   options: { radius?: number; size?: number; margin?: number } = {}
 ): PlacedPetal[] {
-  const radius = options.radius ?? 104
-  const size = options.size ?? 54
+  const radius = options.radius ?? 128
+  const size = options.size ?? 52
   const margin = options.margin ?? 12
   const towards =
     (Math.atan2(-(bounds.height / 2 - origin.y), bounds.width / 2 - origin.x) * 180) / Math.PI

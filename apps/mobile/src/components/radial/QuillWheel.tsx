@@ -6,7 +6,8 @@ import {
   Text,
   View,
   type PanResponderInstance,
-  type ViewInstance
+  type ViewInstance,
+  type ViewStyle
 } from 'react-native'
 import { bloom, confirm, tick } from '../../haptics'
 import { storyboundColors } from '../../theme'
@@ -92,6 +93,7 @@ export function QuillWheel({
       {open ? (
         <>
           <RadialBackdrop onPress={controller.close} />
+          <DialPlate centre={centre} rings={[INNER_RADIUS * scale, OUTER_RADIUS * scale]} />
           <RadialPetals
             highlighted={highlighted}
             origin={centre}
@@ -141,6 +143,41 @@ export function QuillWheel({
         </View>
       </Animated.View>
     </View>
+  )
+}
+
+/** A soft disc with the two rings drawn faintly, so the tools read as one instrument. */
+function DialPlate({ centre, rings }: { centre: Point; rings: number[] }): React.JSX.Element {
+  const [grow] = useState(() => new Animated.Value(0))
+  useEffect(() => {
+    Animated.spring(grow, { toValue: 1, friction: 8, tension: 70, useNativeDriver: true }).start()
+  }, [grow])
+  const plate = (rings.at(-1) ?? 0) + 40
+  const circle = (radius: number): ViewStyle => ({
+    position: 'absolute',
+    left: centre.x - radius,
+    top: centre.y - radius,
+    width: radius * 2,
+    height: radius * 2,
+    borderRadius: radius
+  })
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          opacity: grow,
+          transformOrigin: `${centre.x}px ${centre.y}px`,
+          transform: [{ scale: grow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }]
+        }
+      ]}
+    >
+      <View style={[circle(plate), styles.plate]} />
+      {rings.map((radius) => (
+        <View key={radius} style={[circle(radius), styles.ring]} />
+      ))}
+    </Animated.View>
   )
 }
 
@@ -232,6 +269,16 @@ function createWheelController(actions: {
 }
 
 const styles = StyleSheet.create({
+  plate: {
+    backgroundColor: 'rgba(255, 250, 240, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(173, 135, 81, 0.45)'
+  },
+  ring: {
+    borderWidth: 1,
+    borderColor: 'rgba(173, 135, 81, 0.4)',
+    borderStyle: 'dashed'
+  },
   fab: {
     position: 'absolute',
     width: FAB_SIZE,

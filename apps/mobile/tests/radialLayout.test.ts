@@ -32,10 +32,12 @@ describe('radial menu layout', () => {
     const bounds = { width: 360, height: 760 }
     const corner = layoutAround({ x: 20, y: 740 }, items(7), bounds)
     for (const petal of corner) {
-      expect(petal.x).toBeGreaterThanOrEqual(39)
-      expect(petal.x).toBeLessThanOrEqual(321)
-      expect(petal.y).toBeGreaterThanOrEqual(39)
-      expect(petal.y).toBeLessThanOrEqual(721)
+      // Each petal keeps its whole circle plus a 12-point margin on screen.
+      const inset = petal.size / 2 + 12
+      expect(petal.x).toBeGreaterThanOrEqual(inset)
+      expect(petal.x).toBeLessThanOrEqual(bounds.width - inset)
+      expect(petal.y).toBeGreaterThanOrEqual(inset)
+      expect(petal.y).toBeLessThanOrEqual(bounds.height - inset)
     }
     // From the bottom-left corner, the petals open up and to the right.
     const middle = corner[3]

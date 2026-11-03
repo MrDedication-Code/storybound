@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions
+} from 'react-native'
 import { AppHeader } from '../components/AppHeader'
 import { BookArtwork } from '../components/BookArtwork'
 import { BookDetailsSheet } from '../components/BookDetailsSheet'
@@ -38,6 +46,7 @@ export function BookDetailScreen({
   onEditChapter?: (chapterId: string) => void
 }): React.JSX.Element {
   const editing = Boolean(onEditChapter)
+  const { width: windowWidth } = useWindowDimensions()
   const [book, setBook] = useState<BookDetail | null>(null)
   const [reading, setReading] = useState<ReadingState | null>(null)
   const [trashedCount, setTrashedCount] = useState(0)
@@ -281,9 +290,10 @@ export function BookDetailScreen({
                   editing
                     ? (event) => {
                         tick()
+                        // The menu blooms from the middle of the row, leaving room on both sides.
                         setMenu({
                           chapter,
-                          origin: { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }
+                          origin: { x: windowWidth / 2, y: event.nativeEvent.pageY }
                         })
                       }
                     : undefined

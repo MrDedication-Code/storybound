@@ -35,6 +35,7 @@ export function FindBar({
     <View style={styles.bar}>
       <View style={styles.row}>
         <TextInput
+          autoFocus
           autoCapitalize="none"
           autoCorrect={false}
           accessibilityLabel="Find"

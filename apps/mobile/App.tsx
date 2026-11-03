@@ -1,6 +1,15 @@
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BackHandler, SafeAreaView, StyleSheet, useColorScheme } from 'react-native'
+import {
+  BackHandler,
+  Dimensions,
+  Platform,
+  SafeAreaView,
+  StatusBar as NativeStatusBar,
+  StyleSheet,
+  useColorScheme,
+  useWindowDimensions
+} from 'react-native'
 import { ErrorScreen, LoadingScreen } from './src/components/ScreenState'
 import { openMobileRepository, type OpenedMobileRepository } from './src/data/sqlite/openRepository'
 import {
@@ -18,8 +27,21 @@ import { createMobileSyncRuntime } from './src/sync/runtime'
 import type { MobileSyncController, MobileSyncRuntime } from './src/sync/types'
 import { storyboundColors } from './src/theme'
 
+/**
+ * Android draws apps edge to edge, under the status bar and the gesture or button bar, and
+ * SafeAreaView only pads on iOS. The bars' heights are what the screen has beyond the window.
+ */
+function useAndroidBarInsets(): { paddingTop: number; paddingBottom: number } | null {
+  const window = useWindowDimensions()
+  if (Platform.OS !== 'android') return null
+  const top = NativeStatusBar.currentHeight ?? 0
+  const bottom = Dimensions.get('screen').height - window.height - top
+  return { paddingTop: top, paddingBottom: Math.min(64, Math.max(0, bottom)) }
+}
+
 export default function App(): React.JSX.Element {
   const colorScheme = useColorScheme()
+  const barInsets = useAndroidBarInsets()
   const [repositoryState, setRepositoryState] = useState<
     | { kind: 'loading' }
     | { kind: 'ready'; repository: MobileRepository; syncController: MobileSyncController }
@@ -71,6 +93,7 @@ export default function App(): React.JSX.Element {
     <SafeAreaView
       style={[
         styles.container,
+        barInsets,
         { backgroundColor: colorScheme === 'dark' ? storyboundColors.ink : storyboundColors.paper }
       ]}
     >

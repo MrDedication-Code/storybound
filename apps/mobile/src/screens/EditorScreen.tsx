@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   AppState,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -262,6 +263,8 @@ export function EditorScreen({
         applyEdit(insertSceneBreak(current()), 'tool')
         break
       case 'more':
+        // The card needs the room; none of its tools type into the chapter.
+        Keyboard.dismiss()
         setDrawerOpen(true)
         return
     }

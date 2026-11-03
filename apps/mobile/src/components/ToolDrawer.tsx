@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { confirm } from '../haptics'
 import { storyboundColors, storyboundRadii } from '../theme'
 import { RadialBackdrop } from './radial/RadialPetals'
@@ -27,12 +27,17 @@ export function ToolDrawer({
   onClose: () => void
 }): React.JSX.Element {
   const [unfold] = useState(() => new Animated.Value(0))
+  const [areaHeight, setAreaHeight] = useState(0)
   useEffect(() => {
     Animated.spring(unfold, { toValue: 1, friction: 7, tension: 90, useNativeDriver: true }).start()
   }, [unfold])
 
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+    <View
+      pointerEvents="box-none"
+      style={StyleSheet.absoluteFill}
+      onLayout={(event) => setAreaHeight(event.nativeEvent.layout.height)}
+    >
       <RadialBackdrop onPress={onClose} />
       <Animated.View
         accessibilityViewIsModal
@@ -40,6 +45,8 @@ export function ToolDrawer({
           styles.card,
           {
             bottom: bottomInset + 96,
+            // On a short screen the tools scroll rather than run off the top.
+            maxHeight: areaHeight ? Math.max(200, areaHeight - bottomInset - 96 - 12) : undefined,
             opacity: unfold,
             transformOrigin: 'bottom right',
             transform: [
@@ -50,7 +57,7 @@ export function ToolDrawer({
         ]}
       >
         <Text style={styles.heading}>More tools</Text>
-        <View style={styles.grid}>
+        <ScrollView contentContainerStyle={styles.grid}>
           {tools.map((tool) => (
             <Pressable
               accessibilityLabel={tool.detail ? `${tool.label}, ${tool.detail}` : tool.label}
@@ -80,7 +87,7 @@ export function ToolDrawer({
               ) : null}
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       </Animated.View>
     </View>
   )
