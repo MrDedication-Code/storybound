@@ -1,5 +1,6 @@
 import type { SyncRuntimeStatus } from '@storybound/contracts'
 import type { SqlDatabasePort, SqlWriteCoordinator } from './databasePort'
+import { saveChapterRevision } from './editingRepository'
 import { normalizeRemoteEntity } from '../../sync/entityMapping'
 import type { RpcPushResult, RpcRemoteChange } from '../../sync/rpcContract'
 import {
@@ -704,6 +705,29 @@ export class SQLiteSyncStore {
     }
 
     if (change.entityType === 'chapter') {
+      const current = await transaction.getFirstAsync<{
+        id: string
+        title: string
+        content: string
+        word_count: number
+      }>('SELECT id, title, content, word_count FROM chapters WHERE id = ?', [change.entityId])
+      if (current && (current.title !== value.title || current.content !== value.content)) {
+        await saveChapterRevision(
+          transaction,
+          current,
+          'Before an edit from another device',
+          this.now().toISOString(),
+          globalThis.crypto.randomUUID()
+        )
+      }
+      // Positions are unique within a book, but a reorder arrives one chapter at a time; a
+      // chapter in the way moves past the end until its own update arrives.
+      await transaction.runAsync(
+        `UPDATE chapters
+         SET position = (SELECT MAX(position) + 1 FROM chapters WHERE book_id = ?)
+         WHERE book_id = ? AND position = ? AND id <> ?`,
+        [value.book_id, value.book_id, value.position, change.entityId]
+      )
       await transaction.runAsync(
         `INSERT INTO chapters (
            id, book_id, title, content, position, word_count, created_at, updated_at,

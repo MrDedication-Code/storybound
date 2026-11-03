@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { BookArtwork } from '../components/BookArtwork'
+import { BookDetailsSheet } from '../components/BookDetailsSheet'
+import { PrimaryButton } from '../components/PrimaryButton'
+import { TrashSheet } from '../components/TrashSheet'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
 import type { AppMode, BookSummary, LibrarySummary, MobileRepository } from '../domain/contracts'
 import { estimateReadingMinutes, formatCompactNumber } from '../domain/reading'
@@ -8,7 +11,11 @@ import { compactCaps, literaryHeading, storyboundColors, storyboundRadii } from 
 
 const MODES: ReadonlyArray<{ value: AppMode; label: string; hint: string }> = [
   { value: 'reader', label: 'Reader', hint: 'Just reading. Editing controls are hidden.' },
-  { value: 'editor', label: 'Editor', hint: 'Reading plus chapter editing.' }
+  {
+    value: 'editor',
+    label: 'Editor',
+    hint: 'Reading plus writing: new books, chapters, and writing tools.'
+  }
 ]
 
 export function LibraryScreen({
@@ -29,6 +36,8 @@ export function LibraryScreen({
   const [libraryId, setLibraryId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
+  const [sheet, setSheet] = useState<'new-book' | 'trash' | null>(null)
+  const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -47,7 +56,7 @@ export function LibraryScreen({
     return () => {
       active = false
     }
-  }, [repository])
+  }, [refresh, repository])
 
   if (error && !books) return <ErrorScreen message={error} />
   if (!books) return <LoadingScreen label="Opening your mobile library…" />
@@ -198,6 +207,23 @@ export function LibraryScreen({
         </View>
       </View>
 
+      {mode === 'editor' ? (
+        <View style={styles.editorActions}>
+          <PrimaryButton
+            label="+ New book"
+            style={styles.editorAction}
+            variant="secondary"
+            onPress={() => setSheet('new-book')}
+          />
+          <PrimaryButton
+            label="Trash"
+            style={styles.editorAction}
+            variant="quiet"
+            onPress={() => setSheet('trash')}
+          />
+        </View>
+      ) : null}
+
       {filtered.length ? (
         <View style={styles.books}>
           {filtered.map((book) => (
@@ -230,18 +256,57 @@ export function LibraryScreen({
       ) : (
         <View style={styles.empty}>
           <Text style={styles.emptyMark}>◇</Text>
-          <Text style={styles.emptyTitle}>No matching books</Text>
-          <Text style={styles.blurb}>Try a shorter title, author, or phrase.</Text>
+          <Text style={styles.emptyTitle}>
+            {normalized ? 'No matching books' : 'No books here yet'}
+          </Text>
+          <Text style={styles.blurb}>
+            {normalized
+              ? 'Try a shorter title, author, or phrase.'
+              : mode === 'editor'
+                ? 'Start one with New book, or sync with Storybound on your computer.'
+                : 'Sync with Storybound on your computer, or switch to Editor to start one.'}
+          </Text>
         </View>
       )}
 
       <View style={styles.previewNotice}>
-        <Text style={styles.previewTitle}>Preview library</Text>
+        <Text style={styles.previewTitle}>Kept on this phone</Text>
         <Text style={styles.previewCopy}>
-          This app is intentionally offline. Sample stories, edits, and reading progress are stored
-          in a private SQLite database on this device.
+          Your library lives in a private database on this phone and works offline. With sync
+          switched on, changes travel end-to-end encrypted to your other devices.
         </Text>
       </View>
+
+      {sheet === 'new-book' ? (
+        <BookDetailsSheet
+          confirmLabel="Create book"
+          heading="New book"
+          initialLibraryId={selectedLibrary}
+          libraries={libraries}
+          onClose={() => setSheet(null)}
+          onSave={async (details, targetLibrary) => {
+            const created = await repository.createBook({ ...details, libraryId: targetLibrary })
+            onOpenBook(created.id)
+          }}
+        />
+      ) : null}
+      {sheet === 'trash' ? (
+        <TrashSheet
+          load={async () =>
+            (await repository.listTrashedBooks()).map((book) => ({
+              id: book.id,
+              title: book.title,
+              detail: `Moved to Trash ${new Date(book.deletedAt).toLocaleDateString()}`
+            }))
+          }
+          title="Book Trash"
+          onClose={() => {
+            setSheet(null)
+            setRefresh((value) => value + 1)
+          }}
+          onRestore={(id) => repository.restoreBook(id)}
+        />
+      ) : null}
     </ScrollView>
   )
 }
@@ -254,6 +319,14 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingBottom: 42
+  },
+  editorActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16
+  },
+  editorAction: {
+    flex: 1
   },
   topbar: {
     flexDirection: 'row',

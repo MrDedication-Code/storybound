@@ -1,7 +1,8 @@
 import type Database from 'better-sqlite3'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { gzipSync } from 'node:zlib'
 import type { SyncEntityType } from '@storybound/contracts'
 import { managedCoverPath, safeRemoveManagedCover } from '../coverFiles'
 import { StoryboundError } from '../errors'
@@ -576,6 +577,71 @@ function applyBookmark(
   return synced.rowVersion
 }
 
+/**
+ * Chapter positions are unique within a book, but a reorder arrives one chapter at a time, so an
+ * incoming chapter can land on a position another chapter still holds. That chapter moves to a
+ * spare position at the end until its own update arrives.
+ */
+function makeRoomForChapter(
+  database: Database.Database,
+  chapterId: string,
+  row: Record<string, unknown>
+): void {
+  database
+    .prepare(
+      `UPDATE chapters
+       SET position = (SELECT MAX(position) + 1 FROM chapters WHERE book_id = ?)
+       WHERE book_id = ? AND position = ? AND id <> ?`
+    )
+    .run(row.book_id, row.book_id, row.position, chapterId)
+}
+
+/** Keeps the text being replaced by another device's edit in the chapter's revision history. */
+function keepRevisionBeforeSync(
+  database: Database.Database,
+  chapterId: string,
+  row: Record<string, unknown>
+): void {
+  const current = database
+    .prepare('SELECT title, content, word_count FROM chapters WHERE id = ?')
+    .get(chapterId) as { title: string; content: string; word_count: number } | undefined
+  if (!current || (current.title === row.title && current.content === row.content)) return
+  const contentHash = createHash('sha256')
+    .update(current.title)
+    .update('\u0000')
+    .update(current.content)
+    .digest('hex')
+  const known = database
+    .prepare('SELECT 1 FROM chapter_revisions WHERE chapter_id = ? AND content_hash = ?')
+    .get(chapterId, contentHash)
+  if (known) return
+  const revisionNumber = Number(
+    database
+      .prepare(
+        'SELECT COALESCE(MAX(revision_number), 0) + 1 FROM chapter_revisions WHERE chapter_id = ?'
+      )
+      .pluck()
+      .get(chapterId)
+  )
+  database
+    .prepare(
+      `INSERT INTO chapter_revisions (
+         id, chapter_id, revision_number, title, content_blob, content_hash, word_count, reason,
+         created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Before an edit from another device', ?)`
+    )
+    .run(
+      randomUUID(),
+      chapterId,
+      revisionNumber,
+      current.title,
+      gzipSync(Buffer.from(current.content, 'utf8')),
+      contentHash,
+      current.word_count,
+      new Date().toISOString()
+    )
+}
+
 function localEntity(
   libraryId: string,
   entityType: DesktopSyncEntityType,
@@ -669,6 +735,8 @@ export function applyLocalSyncEntity(
   }
   if (entityType === 'chapter') {
     const row = boundedRecord(value, CHAPTER_COLUMNS, 'id', entityId)
+    keepRevisionBeforeSync(database, entityId, row)
+    makeRoomForChapter(database, entityId, row)
     upsert(database, 'chapters', row, CHAPTER_COLUMNS, 'id')
     return requirePositiveVersion(row)
   }

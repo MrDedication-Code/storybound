@@ -50,7 +50,15 @@ Library, book, chapter, reading-state, annotation, bookmark, and book-cover payl
 - Reader themes, text sizing, progress, and resume position
 - Bookmarks: save your place from the reader footer with an optional name, note, and colour; the book's list jumps back to it
 - Highlights and notes: long-press a paragraph, narrow it to sentences, pick a colour, and add a note; tap a highlight to edit or remove it; the book's list jumps to each one
-- Full-height chapter editor with autosave and reader preview
+- Reader mode and Editor mode; Reader mode hides every writing control
+
+## Editor mode
+
+- **Books:** create a book (choosing its library when there are several), edit its title, subtitle, author, description, status, and series, move it to Trash, and restore it from the library's Trash.
+- **Chapters:** add, rename, duplicate, reorder (Arrange mode with large arrows), merge with the next chapter, and move to Trash with Undo; restore from the book's Chapter Trash. Holding a chapter opens a petal menu that blooms around the finger with every chapter action.
+- **Writing:** a full-height editor that saves after a short pause and whenever the app goes to the background. A quill button in the thumb's corner opens the writing-tools wheel: press, slide to a tool, and let go, or tap it open and tap tools. The near ring holds Undo, Redo, Italic, and Bold; the far ring holds Heading, Dialogue quotes, Em dash, Scene break, and More. Petals tick under the thumb (haptics) and a caption names the one touched.
+- **More tools** unfold as a card from the same corner: Find & replace (match case, replace one or all), split the chapter at the cursor (titled from its opening heading when it has one), earlier versions, focus mode, smart punctuation (curly quotes, `--` to an em dash, `...` to an ellipsis, as typed), read this chapter, and previous or next chapter.
+- **Versions** are kept on the phone: while writing (at most every ten minutes), before a split, merge, move to Trash, or restored version, and before another device's edit replaces the text. The newest 50 per chapter are kept; they do not sync.
 - Durable on-device books, chapters, reading state, and coalesced change ledger
 - Optional encrypted account sync with recovery-code onboarding and conflict counts
 

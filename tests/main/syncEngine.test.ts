@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createStoryboundPaths, openStoryboundDatabase } from '../../src/main/database'
 import { StoryboundStore } from '../../src/main/store'
@@ -442,6 +443,121 @@ describe('DesktopSyncEngine', () => {
     ).toBe('2026-08-06T21:00:00.000Z')
     expect((await sourceEngine.run()).pushed).toBe(0)
     expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
+  it('applies a chapter reorder and keeps text replaced by another device as a revision', async () => {
+    const provider = new MemoryProvider()
+    const key = Uint8Array.from({ length: 32 }, (_, index) => index + 13)
+    const source = await databaseWithProfile(DEVICE_A)
+    source
+      .prepare(
+        `INSERT INTO books (id, title, blurb, status, created_at, updated_at, total_word_count)
+         VALUES ('book-order', 'Ordered', '', 'ongoing', ?, ?, 3)`
+      )
+      .run(NOW, NOW)
+    for (const [index, id] of ['first', 'second', 'third'].entries()) {
+      source
+        .prepare(
+          `INSERT INTO chapters (
+             id, book_id, title, content, position, created_at, updated_at, word_count
+           ) VALUES (?, 'book-order', ?, ?, ?, ?, ?, 1)`
+        )
+        .run(id, id, `Text of ${id}`, index, NOW, NOW)
+    }
+    const sourceEngine = new DesktopSyncEngine(source, provider, PROFILE_ID, DEVICE_A, key, 1)
+    await sourceEngine.run()
+    const target = await databaseWithProfile(DEVICE_B)
+    const targetEngine = new DesktopSyncEngine(target, provider, PROFILE_ID, DEVICE_B, key, 1)
+    await targetEngine.run()
+
+    // Reversed the way the desktop and phone reorder: shift every position out of the way,
+    // then number the new order.
+    source.prepare(`UPDATE chapters SET position = position + 10`).run()
+    for (const [position, id] of ['third', 'second', 'first'].entries()) {
+      source
+        .prepare(`UPDATE chapters SET position = ?, row_version = row_version + 1 WHERE id = ?`)
+        .run(position, id)
+    }
+    source
+      .prepare(
+        `UPDATE chapters SET content = 'Rewritten.', row_version = row_version + 1
+         WHERE id = 'second'`
+      )
+      .run()
+    await sourceEngine.run()
+    await targetEngine.run()
+
+    expect(
+      target
+        .prepare(`SELECT id FROM chapters WHERE book_id = 'book-order' ORDER BY position`)
+        .pluck()
+        .all()
+    ).toEqual(['third', 'second', 'first'])
+    const revision = target
+      .prepare(`SELECT title, reason, content_blob FROM chapter_revisions WHERE chapter_id = ?`)
+      .get('second') as { title: string; reason: string; content_blob: Buffer }
+    expect(revision).toMatchObject({
+      title: 'second',
+      reason: 'Before an edit from another device'
+    })
+    expect(gunzipSync(revision.content_blob).toString()).toBe('Text of second')
+    expect((await targetEngine.run()).pushed).toBe(0)
+  })
+
+  it('accepts a book and chapter written by the phone', async () => {
+    const target = await databaseWithProfile(DEVICE_B)
+    // The shape the phone's sync store sends for a book it created.
+    applyLocalSyncEntity(target, LIBRARY_ID, 'book', 'phone-book', 'upsert', {
+      id: 'phone-book',
+      title: 'Written on the train',
+      blurb: '',
+      status: 'ongoing',
+      created_at: NOW,
+      updated_at: NOW,
+      last_opened_at: null,
+      completed_at: null,
+      total_word_count: 4,
+      is_archived: 0,
+      deleted_at: null,
+      row_version: 1,
+      subtitle: '',
+      author_name: 'Jack',
+      language_code: '',
+      source_label: '',
+      source_url: '',
+      personal_notes: '',
+      rating: null,
+      favourited_at: null,
+      pinned_at: null,
+      series_name: '',
+      series_position: null,
+      cover_style: 'classic',
+      cover_position_x: 50,
+      cover_position_y: 50,
+      library_id: LIBRARY_ID
+    })
+    applyLocalSyncEntity(target, LIBRARY_ID, 'chapter', 'phone-chapter', 'upsert', {
+      id: 'phone-chapter',
+      book_id: 'phone-book',
+      title: 'Chapter 1',
+      content: 'Four words right here.',
+      position: 0,
+      created_at: NOW,
+      updated_at: NOW,
+      word_count: 4,
+      deleted_at: null,
+      trashed_from_position: null,
+      row_version: 1
+    })
+    expect(
+      target
+        .prepare(
+          `SELECT b.title, bl.library_id, c.title AS chapter FROM books b
+           JOIN book_libraries bl ON bl.book_id = b.id JOIN chapters c ON c.book_id = b.id
+           WHERE b.id = 'phone-book'`
+        )
+        .get()
+    ).toEqual({ title: 'Written on the train', library_id: LIBRARY_ID, chapter: 'Chapter 1' })
   })
 
   it('skips record types this version does not understand instead of failing', async () => {

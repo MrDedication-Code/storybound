@@ -23,6 +23,8 @@ import {
   READER_FONT_SIZE_MIN
 } from '../../domain/contracts'
 import { clamp, quoteText } from '../../domain/reading'
+import { countWords, recordChange } from './changeRecords'
+import { createEditingOperations, saveRollingRevision } from './editingRepository'
 import {
   createSqlWriteCoordinator,
   type SqlDatabasePort,
@@ -242,33 +244,6 @@ async function getBookSummary(database: SqlDatabasePort, bookId: string): Promis
   return mapBook(row)
 }
 
-async function recordChange(
-  transaction: SqlDatabasePort,
-  entityType: 'chapter' | 'reading_state' | 'annotation' | 'bookmark',
-  entityId: string,
-  changedAt: string,
-  rowVersion: number,
-  operation: 'upsert' | 'delete' = 'upsert'
-): Promise<void> {
-  const syncEntityType = entityType === 'reading_state' ? 'reading-state' : entityType
-  await transaction.runAsync(
-    `INSERT INTO change_records (
-       entity_type, entity_id, operation, changed_at, row_version,
-       base_remote_revision, mutation_id
-     ) VALUES (
-       ?, ?, ?, ?, ?,
-       (SELECT remote_revision FROM sync_entity_state WHERE entity_type = ? AND entity_id = ?),
-       NULL
-     )
-     ON CONFLICT (entity_type, entity_id) DO UPDATE SET
-       operation = excluded.operation,
-       changed_at = excluded.changed_at,
-       row_version = excluded.row_version,
-       mutation_id = NULL`,
-    [syncEntityType, entityId, operation, changedAt, rowVersion, syncEntityType, entityId]
-  )
-}
-
 /** Drops anything unrecognised, so a damaged value can only fall back to the default. */
 function sanitizePreferences(
   values: Partial<Record<keyof MobilePreferences, unknown>>
@@ -281,6 +256,9 @@ function sanitizePreferences(
     values.readerTheme === 'night'
   ) {
     clean.readerTheme = values.readerTheme
+  }
+  if (typeof values.smartPunctuation === 'boolean') {
+    clean.smartPunctuation = values.smartPunctuation
   }
   if (typeof values.readerFontSize === 'number' && Number.isFinite(values.readerFontSize)) {
     clean.readerFontSize = clamp(
@@ -329,7 +307,19 @@ export function createSQLiteRepository(
     return { ...DEFAULT_PREFERENCES, ...sanitizePreferences(stored) }
   }
 
-  return {
+  const editing = createEditingOperations(database, now, writes, createId)
+  const repository: MobileRepository = {
+    ...editing,
+
+    async createBook(input) {
+      return repository.getBook(await editing.createBook(input))
+    },
+
+    async updateBookDetails(bookId, input) {
+      await editing.updateBookDetails(bookId, input)
+      return repository.getBook(bookId)
+    },
+
     async listBooks(): Promise<BookSummary[]> {
       const rows = await database.getAllAsync<BookRow>(
         `${bookSummaryQuery}
@@ -352,8 +342,12 @@ export function createSQLiteRepository(
     },
 
     async getBook(bookId: string): Promise<BookDetail> {
-      const [book, chapterRows] = await Promise.all([
+      const [book, series, chapterRows] = await Promise.all([
         getBookSummary(database, bookId),
+        database.getFirstAsync<{ series_name: string | null; series_position: number | null }>(
+          'SELECT series_name, series_position FROM books WHERE id = ?',
+          [bookId]
+        ),
         database.getAllAsync<ChapterRow>(
           `SELECT id, book_id, title, content, position, word_count, updated_at
            FROM chapters
@@ -362,7 +356,12 @@ export function createSQLiteRepository(
           [bookId]
         )
       ])
-      return { ...book, chapters: chapterRows.map(mapChapterSummary) }
+      return {
+        ...book,
+        seriesName: series?.series_name ?? '',
+        seriesPosition: series?.series_position ?? null,
+        chapters: chapterRows.map(mapChapterSummary)
+      }
     },
 
     async getChapter(chapterId: string): Promise<Chapter> {
@@ -381,7 +380,7 @@ export function createSQLiteRepository(
         const title = input.title.trim()
         if (!title) throw new Error('Every chapter needs a title.')
         const content = input.content.replace(/\r\n?/g, '\n')
-        const wordCount = content.match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+        const wordCount = countWords(content)
         const updatedAt = now().toISOString()
         let updated: Chapter | null = null
 
@@ -393,6 +392,9 @@ export function createSQLiteRepository(
             [input.id]
           )
           if (!previous) throw new Error('That chapter could not be found in this library.')
+          if (previous.content !== content || previous.title !== title) {
+            await saveRollingRevision(transaction, previous, now(), createId())
+          }
 
           await transaction.runAsync(
             `UPDATE chapters
@@ -774,4 +776,5 @@ export function createSQLiteRepository(
       })
     }
   }
+  return repository
 }

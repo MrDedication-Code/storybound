@@ -129,6 +129,10 @@ function StoryboundApp({
     setRoutes((current) => [...current, next])
   }, [])
 
+  const replace = useCallback((next: MobileRoute): void => {
+    setRoutes((current) => [...current.slice(0, -1), next])
+  }, [])
+
   const back = useCallback((): void => {
     setRoutes((current) => (current.length > 1 ? current.slice(0, -1) : current))
   }, [])
@@ -201,8 +205,14 @@ function StoryboundApp({
         <EditorScreen
           bookId={route.bookId}
           chapterId={route.chapterId}
+          key={route.chapterId}
+          preferences={preferences}
           repository={repository}
           onBack={back}
+          onChangePreferences={changePreferences}
+          onOpenChapter={(chapterId) =>
+            replace({ name: 'editor', bookId: route.bookId, chapterId })
+          }
           onRead={(chapterId) => push({ name: 'reader', bookId: route.bookId, chapterId })}
           registerBackHandler={registerBackHandler}
         />

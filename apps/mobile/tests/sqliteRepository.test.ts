@@ -48,10 +48,11 @@ describe('SQLite mobile repository', () => {
     await expect(repository.getPreferences()).resolves.toEqual({
       mode: 'reader',
       readerTheme: 'sepia',
-      readerFontSize: 19
+      readerFontSize: 19,
+      smartPunctuation: true
     })
     await repository.savePreferences({ mode: 'editor', readerTheme: 'night' })
-    await repository.savePreferences({ readerFontSize: 25 })
+    await repository.savePreferences({ readerFontSize: 25, smartPunctuation: false })
 
     database!.close()
     database = new NodeSqliteDatabase(databasePath)
@@ -59,7 +60,8 @@ describe('SQLite mobile repository', () => {
     await expect(createSQLiteRepository(database).getPreferences()).resolves.toEqual({
       mode: 'editor',
       readerTheme: 'night',
-      readerFontSize: 25
+      readerFontSize: 25,
+      smartPunctuation: false
     })
     // Preferences are device-only: they never enter the sync change ledger.
     await expect(createSQLiteRepository(database).getSyncStatus()).resolves.toMatchObject({
@@ -75,9 +77,15 @@ describe('SQLite mobile repository', () => {
       repository.savePreferences({
         mode: 'admin' as never,
         readerTheme: 'neon' as never,
-        readerFontSize: 400
+        readerFontSize: 400,
+        smartPunctuation: 'yes' as never
       })
-    ).resolves.toEqual({ mode: 'reader', readerTheme: 'sepia', readerFontSize: 31 })
+    ).resolves.toEqual({
+      mode: 'reader',
+      readerTheme: 'sepia',
+      readerFontSize: 31,
+      smartPunctuation: true
+    })
     await database!.runAsync(
       "UPDATE app_preferences SET value = 'not json' WHERE key = 'readerFontSize'"
     )

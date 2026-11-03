@@ -2,7 +2,7 @@ import type { SqlDatabasePort } from './databasePort'
 import { seedLibrary } from './seedData'
 
 export const DATABASE_NAME = 'storybound.db'
-export const DATABASE_VERSION = 6
+export const DATABASE_VERSION = 7
 
 const schemaVersionOne = `
 CREATE TABLE IF NOT EXISTS libraries (
@@ -260,6 +260,21 @@ INSERT INTO change_records SELECT * FROM change_records_v3;
 DROP TABLE change_records_v3;
 `
 
+// Earlier versions of chapters, kept on this phone only, so an edit, split, merge, or a change
+// from another device can be undone.
+const schemaVersionSeven = `
+CREATE TABLE chapter_revisions (
+  id TEXT PRIMARY KEY NOT NULL,
+  chapter_id TEXT NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  word_count INTEGER NOT NULL DEFAULT 0,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX chapter_revisions_chapter_idx ON chapter_revisions (chapter_id, created_at);
+`
+
 async function createFirstLibrary(transaction: SqlDatabasePort): Promise<void> {
   await transaction.runAsync(
     `INSERT OR IGNORE INTO libraries (id, name, created_at, updated_at)
@@ -314,6 +329,11 @@ export async function migrateDatabase(database: SqlDatabasePort): Promise<void> 
     if (currentVersion < 6) {
       await transaction.execAsync(schemaVersionSix)
       await transaction.execAsync('PRAGMA user_version = 6')
+    }
+
+    if (currentVersion < 7) {
+      await transaction.execAsync(schemaVersionSeven)
+      await transaction.execAsync('PRAGMA user_version = 7')
     }
   })
 }

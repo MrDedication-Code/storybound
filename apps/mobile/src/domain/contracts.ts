@@ -39,7 +39,58 @@ export interface LibrarySummary {
 }
 
 export interface BookDetail extends BookSummary {
+  seriesName: string
+  seriesPosition: number | null
   chapters: ChapterSummary[]
+}
+
+/** The details a writer can edit on the phone; the desktop has more (tags, covers, notes). */
+export interface BookDetailsInput {
+  title: string
+  subtitle: string
+  authorName: string
+  blurb: string
+  status: BookStatus
+  seriesName: string
+  seriesPosition: number | null
+}
+
+export interface CreateBookInput extends BookDetailsInput {
+  /** Null puts the book in this phone's first library. */
+  libraryId: string | null
+}
+
+export interface TrashedBook {
+  id: string
+  libraryId: string
+  title: string
+  deletedAt: string
+}
+
+export interface TrashedChapter {
+  id: string
+  bookId: string
+  title: string
+  wordCount: number
+  deletedAt: string
+}
+
+/** An earlier version of a chapter kept on this phone (versions are not synced). */
+export interface ChapterRevision {
+  id: string
+  chapterId: string
+  title: string
+  content: string
+  wordCount: number
+  reason: string
+  createdAt: string
+}
+
+export interface SplitChapterInput {
+  id: string
+  /** Character offset in the chapter text where the new chapter begins. */
+  offset: number
+  newTitle: string
 }
 
 export interface ReadingState {
@@ -147,6 +198,8 @@ export interface MobilePreferences {
   mode: AppMode
   readerTheme: ReaderTheme
   readerFontSize: number
+  /** Turns typed straight quotes, -- and ... into curly quotes, dashes, and ellipses. */
+  smartPunctuation: boolean
 }
 
 export const READER_FONT_SIZE_MIN = 15
@@ -155,7 +208,8 @@ export const READER_FONT_SIZE_MAX = 31
 export const DEFAULT_PREFERENCES: MobilePreferences = {
   mode: 'reader',
   readerTheme: 'sepia',
-  readerFontSize: 19
+  readerFontSize: 19,
+  smartPunctuation: true
 }
 
 export interface MobileRepository {
@@ -176,6 +230,25 @@ export interface MobileRepository {
   createBookmark(input: CreateBookmarkInput): Promise<Bookmark>
   updateBookmark(input: UpdateBookmarkInput): Promise<Bookmark>
   removeBookmark(id: string): Promise<void>
+  createBook(input: CreateBookInput): Promise<BookDetail>
+  updateBookDetails(bookId: string, input: BookDetailsInput): Promise<BookDetail>
+  trashBook(bookId: string): Promise<void>
+  restoreBook(bookId: string): Promise<void>
+  listTrashedBooks(): Promise<TrashedBook[]>
+  /** Adds a chapter at the end of the book. */
+  createChapter(bookId: string, title?: string): Promise<Chapter>
+  duplicateChapter(chapterId: string): Promise<Chapter>
+  /** Puts the book's chapters in this order; every active chapter must be listed. */
+  reorderChapters(bookId: string, chapterIds: string[]): Promise<void>
+  trashChapter(chapterId: string): Promise<void>
+  restoreChapter(chapterId: string): Promise<void>
+  listTrashedChapters(bookId: string): Promise<TrashedChapter[]>
+  /** Returns the new chapter that holds the text from the split point on. */
+  splitChapter(input: SplitChapterInput): Promise<Chapter>
+  /** Appends the next chapter to this one and moves the next chapter to Trash. */
+  mergeWithNextChapter(chapterId: string): Promise<Chapter>
+  listChapterRevisions(chapterId: string): Promise<ChapterRevision[]>
+  restoreChapterRevision(revisionId: string): Promise<Chapter>
   getSyncStatus(): Promise<LocalSyncStatus>
   getPreferences(): Promise<MobilePreferences>
   savePreferences(changes: Partial<MobilePreferences>): Promise<MobilePreferences>

@@ -24,6 +24,11 @@ export function calculateReadingProgress(
   return Number((((safeIndex + safePosition) / chapterCount) * 100).toFixed(2))
 }
 
+/** Words as the desktop counts them, so both apps show the same totals. */
+export function countWords(content: string): number {
+  return content.match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+}
+
 export function estimateReadingMinutes(wordCount: number, wordsPerMinute = 230): number {
   if (wordCount <= 0) return 0
   return Math.max(1, Math.ceil(wordCount / Math.max(1, wordsPerMinute)))
