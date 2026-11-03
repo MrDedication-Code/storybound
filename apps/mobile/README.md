@@ -20,6 +20,14 @@ npm run check
 npx expo-doctor --verbose
 ```
 
+## Build an Android APK
+
+```bash
+npm run build:android
+```
+
+Run from `apps/mobile`. The script regenerates the native Android project from `app.json` (it is not kept in git), builds a release with Gradle, signs it with the key in `~/.storybound/android`, and writes `dist/storybound-<version>.apk`. It needs Android Studio's SDK and bundled Java. Back up `~/.storybound/android`: every update must be signed with the same key, or Android will not install it over the existing app. Raise `version` and `android.versionCode` in `app.json` for each release.
+
 ## Optional encrypted sync
 
 Copy `.env.example` to `.env.local` in this directory (Expo does not read the repository root's env files) and provide the Storybound Supabase project values:

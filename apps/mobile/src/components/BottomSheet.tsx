@@ -1,14 +1,7 @@
-import type { ReactNode } from 'react'
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-  type ViewStyle
-} from 'react-native'
+import { useRef, type ReactNode } from 'react'
+import { Modal, Pressable, StyleSheet, View, type ViewInstance, type ViewStyle } from 'react-native'
 import { ANNOTATION_COLORS } from '../domain/contracts'
+import { useKeyboardOverlap } from '../hooks/useKeyboardOverlap'
 import { highlightColor, storyboundColors, storyboundRadii } from '../theme'
 
 /** A panel that slides up over the reader; tapping above it closes it. */
@@ -21,15 +14,19 @@ export function BottomSheet({
   onClose: () => void
   style?: ViewStyle
 }): React.JSX.Element {
+  // The sheet rises above the keyboard so its buttons stay reachable while typing.
+  const frameRef = useRef<ViewInstance>(null)
+  const { overlap, remeasure } = useKeyboardOverlap(frameRef)
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
+      <View
+        ref={frameRef}
+        style={[styles.backdrop, { paddingBottom: overlap }]}
+        onLayout={remeasure}
       >
         <Pressable accessibilityLabel="Close" style={styles.dismiss} onPress={onClose} />
         <View style={[styles.sheet, style]}>{children}</View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   )
 }
