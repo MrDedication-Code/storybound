@@ -7,9 +7,11 @@ import {
   SafeAreaView,
   StatusBar as NativeStatusBar,
   StyleSheet,
+  View,
   useColorScheme,
   useWindowDimensions
 } from 'react-native'
+import { ListeningBar } from './src/components/ListeningBar'
 import { ErrorScreen, LoadingScreen } from './src/components/ScreenState'
 import { openMobileRepository, type OpenedMobileRepository } from './src/data/sqlite/openRepository'
 import {
@@ -21,6 +23,7 @@ import {
 import { BookDetailScreen } from './src/screens/BookDetailScreen'
 import { EditorScreen } from './src/screens/EditorScreen'
 import { LibraryScreen } from './src/screens/LibraryScreen'
+import { ListeningSettingsScreen } from './src/screens/ListeningSettingsScreen'
 import { ReaderScreen } from './src/screens/ReaderScreen'
 import { SyncSettingsScreen } from './src/screens/SyncSettingsScreen'
 import { createMobileSyncRuntime } from './src/sync/runtime'
@@ -195,6 +198,7 @@ function StoryboundApp({
           repository={repository}
           onChangeMode={(mode) => changePreferences({ mode })}
           onOpenBook={(bookId) => push({ name: 'book', bookId })}
+          onOpenListening={() => push({ name: 'listening-settings' })}
           onOpenSync={() => push({ name: 'sync-settings' })}
         />
       )
@@ -220,6 +224,7 @@ function StoryboundApp({
           onBack={back}
           onChangePreferences={changePreferences}
           onEditChapter={editChapter(route.bookId)}
+          onOpenListeningSettings={() => push({ name: 'listening-settings' })}
         />
       )
       break
@@ -244,9 +249,24 @@ function StoryboundApp({
     case 'sync-settings':
       screen = <SyncSettingsScreen controller={syncController} onBack={back} onHome={home} />
       break
+    case 'listening-settings':
+      screen = <ListeningSettingsScreen onBack={back} />
+      break
   }
 
-  return screen
+  // While a book is read aloud, a small player stays at the foot of every other screen.
+  return (
+    <View style={styles.container}>
+      <View style={styles.container}>{screen}</View>
+      {route.name === 'reader' || route.name === 'editor' ? null : (
+        <ListeningBar
+          onOpen={(bookId, chapterId) =>
+            push({ name: 'reader', bookId, chapterId: chapterId ?? undefined })
+          }
+        />
+      )}
+    </View>
+  )
 }
 
 const styles = StyleSheet.create({

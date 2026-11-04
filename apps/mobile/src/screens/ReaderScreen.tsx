@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import {
   Pressable,
   ScrollView,
@@ -40,7 +40,13 @@ import {
   segmentBlock,
   type StoryBlock
 } from '../domain/reading'
+import { listeningSession } from '../narration'
+import { createGoogleVoice, ListeningSetupNeeded } from '../narration/googleVoice'
+import { saveNarrationSettings } from '../narration/narrationSettings'
+import { useListening } from '../narration/useListening'
 import { highlightColor, storyboundColors } from '../theme'
+
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 
 const readerPalettes: Record<
   ReaderTheme,
@@ -73,7 +79,8 @@ export function ReaderScreen({
   preferences,
   onBack,
   onEditChapter,
-  onChangePreferences
+  onChangePreferences,
+  onOpenListeningSettings
 }: {
   bookId: string
   initialChapterId?: string
@@ -83,6 +90,7 @@ export function ReaderScreen({
   /** Omitted in reader mode, which hides every edit control. */
   onEditChapter?: (chapterId: string) => void
   onChangePreferences: (changes: Partial<MobilePreferences>) => void
+  onOpenListeningSettings: () => void
 }): React.JSX.Element {
   const [book, setBook] = useState<BookDetail | null>(null)
   const [chapter, setChapter] = useState<Chapter | null>(null)
@@ -111,6 +119,10 @@ export function ReaderScreen({
   const [bookmarkSheet, setBookmarkSheet] = useState<{ bookmark?: Bookmark } | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
+  const [listenOpen, setListenOpen] = useState(false)
+  const [startingListen, setStartingListen] = useState(false)
+  const listening = useListening()
+  const listeningHere = listening.bookId === bookId && listening.status !== 'idle'
   const scrollRef = useRef<ScrollViewInstance>(null)
   const viewportHeightRef = useRef(0)
   const contentHeightRef = useRef(0)
@@ -319,6 +331,63 @@ export function ReaderScreen({
     setBookmarks(await repository.listBookmarks(bookId))
   }
 
+  // While listening, the page follows the passage being read, into the next chapter too.
+  const follow = useEffectEvent((chapterId: string, start: number): void => {
+    if (!book || !chapter) return
+    pendingJumpRef.current = start
+    if (chapterId !== chapter.id) {
+      void loadChapter(book, chapterId, null)
+        .then(() => {
+          restorePendingRef.current = false
+        })
+        .catch(() => undefined)
+      return
+    }
+    tryPendingJump()
+  })
+  useEffect(() => {
+    let last = ''
+    return listeningSession().subscribe((snapshot) => {
+      const { chapterId, passage } = snapshot
+      if (snapshot.bookId !== bookId || snapshot.status === 'idle' || !chapterId || !passage) return
+      const key = `${chapterId}:${passage.start}`
+      if (key === last) return
+      last = key
+      follow(chapterId, passage.start)
+    })
+  }, [bookId])
+
+  const startListening = async (): Promise<void> => {
+    if (!chapter) return
+    setStartingListen(true)
+    setError('')
+    try {
+      const { voice, settings } = await createGoogleVoice()
+      await listeningSession().start({
+        repository,
+        voice,
+        bookId,
+        chapterId: chapter.id,
+        progress: positionRef.current,
+        speed: settings.speed
+      })
+    } catch (caught) {
+      if (caught instanceof ListeningSetupNeeded) {
+        setListenOpen(false)
+        onOpenListeningSettings()
+      } else {
+        setError(caught instanceof Error ? caught.message : 'Listening could not start.')
+      }
+    } finally {
+      setStartingListen(false)
+    }
+  }
+
+  const changeSpeed = (speed: number): void => {
+    listeningSession().setSpeed(speed)
+    void saveNarrationSettings({ speed })
+  }
+
   const reportJumpError = (caught: unknown): void =>
     setError(caught instanceof Error ? caught.message : 'That chapter could not open.')
 
@@ -337,6 +406,10 @@ export function ReaderScreen({
     (bookmark) =>
       bookmark.chapterId === chapter.id && Math.abs(bookmark.location - chapterPosition) <= 0.02
   )
+
+  const passage = listeningHere && listening.chapterId === chapter.id ? listening.passage : null
+  const isReading = (block: StoryBlock): boolean =>
+    Boolean(passage && block.end > passage.start && block.start < passage.end)
 
   const renderText = (block: StoryBlock): React.ReactNode[] =>
     segmentBlock(block, placed).map((segment) => {
@@ -501,7 +574,8 @@ export function ReaderScreen({
                   key={`paragraph-${block.start}`}
                   style={[
                     styles.paragraph,
-                    { color: palette.foreground, fontSize, lineHeight: fontSize * 1.72 }
+                    { color: palette.foreground, fontSize, lineHeight: fontSize * 1.72 },
+                    isReading(block) && styles.readingAloud
                   ]}
                   onLayout={(event) => recordBlock(block, event)}
                   onLongPress={() => setSheet({ mode: 'create', block })}
@@ -545,6 +619,102 @@ export function ReaderScreen({
         </View>
       </ScrollView>
 
+      {listenOpen ? (
+        <View
+          style={[
+            styles.listenPanel,
+            { backgroundColor: palette.background, borderColor: palette.line }
+          ]}
+        >
+          <View style={styles.listenRow}>
+            <ListenButton
+              color={palette.foreground}
+              disabled={!listeningHere}
+              glyph="⏮"
+              label="Previous passage"
+              onPress={() => listeningSession().previous()}
+            />
+            <ListenButton
+              big
+              color={storyboundColors.paperRaised}
+              disabled={startingListen}
+              glyph={
+                startingListen || (listeningHere && listening.status === 'loading')
+                  ? '…'
+                  : listeningHere && listening.status === 'playing'
+                    ? '⏸'
+                    : '▶'
+              }
+              label={listeningHere && listening.status === 'playing' ? 'Pause' : 'Play'}
+              onPress={() => {
+                if (listeningHere) listeningSession().toggle()
+                else void startListening()
+              }}
+            />
+            <ListenButton
+              color={palette.foreground}
+              disabled={!listeningHere}
+              glyph="⏭"
+              label="Next passage"
+              onPress={() => listeningSession().next()}
+            />
+            <ListenButton
+              color={palette.foreground}
+              disabled={!listeningHere}
+              glyph="■"
+              label="Stop listening"
+              onPress={() => {
+                listeningSession().stop()
+                setListenOpen(false)
+              }}
+            />
+          </View>
+          <View style={styles.listenRow}>
+            {SPEEDS.map((speed) => (
+              <Pressable
+                accessibilityLabel={`Speed ${speed} times`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: listening.speed === speed }}
+                key={speed}
+                style={[
+                  styles.speedChip,
+                  { borderColor: palette.line },
+                  listening.speed === speed && styles.speedChosen
+                ]}
+                onPress={() => changeSpeed(speed)}
+              >
+                <Text
+                  style={[
+                    styles.speedLabel,
+                    {
+                      color:
+                        listening.speed === speed ? storyboundColors.paperRaised : palette.muted
+                    }
+                  ]}
+                >
+                  {speed}×
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {listeningHere && listening.error ? (
+            <Text style={styles.listenError}>{listening.error}</Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              setListenOpen(false)
+              onOpenListeningSettings()
+            }}
+          >
+            <Text style={[styles.listenHint, { color: palette.muted }]}>
+              Keeps reading with the screen off · Voice and reading style ›
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View
         accessibilityLabel={`${Math.round(progress)} percent through ${book.title}`}
         accessibilityRole="progressbar"
@@ -560,6 +730,18 @@ export function ReaderScreen({
         <Text style={[styles.progressText, { color: palette.muted }]}>
           {reading?.chapterId ? `${chapterIndex + 1}/${book.chapters.length}` : 'New'}
         </Text>
+        <Pressable
+          accessibilityHint="Reads the book aloud from here"
+          accessibilityRole="button"
+          hitSlop={10}
+          style={({ pressed }) => [styles.bookmarkButton, pressed && styles.pressed]}
+          onPress={() => {
+            setListenOpen((open) => !open)
+            if (!listeningHere && !listenOpen) void startListening()
+          }}
+        >
+          <Text style={styles.bookmarkLabel}>{listeningHere ? 'Listening' : 'Listen'}</Text>
+        </Pressable>
         <Pressable
           accessibilityHint={
             nearbyBookmark ? 'Edits the bookmark here' : 'Saves your place in this chapter'
@@ -628,9 +810,111 @@ export function ReaderScreen({
   )
 }
 
+function ListenButton({
+  glyph,
+  label,
+  color,
+  big = false,
+  disabled = false,
+  onPress
+}: {
+  glyph: string
+  label: string
+  color: string
+  big?: boolean
+  disabled?: boolean
+  onPress: () => void
+}): React.JSX.Element {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      disabled={disabled}
+      hitSlop={6}
+      style={({ pressed }) => [
+        styles.listenButton,
+        big && styles.listenButtonBig,
+        disabled && styles.disabled,
+        pressed && styles.pressed
+      ]}
+      onPress={onPress}
+    >
+      <Text style={[styles.listenGlyph, big && styles.listenGlyphBig, { color }]}>
+        {glyph + '\uFE0E'}
+      </Text>
+    </Pressable>
+  )
+}
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1
+  },
+  readingAloud: {
+    backgroundColor: 'rgba(173, 135, 81, 0.16)'
+  },
+  listenPanel: {
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth
+  },
+  listenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14
+  },
+  listenButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24
+  },
+  listenButtonBig: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: storyboundColors.walnut,
+    borderColor: storyboundColors.brassBright,
+    borderWidth: 2
+  },
+  listenGlyph: {
+    fontSize: 22,
+    includeFontPadding: false,
+    textAlign: 'center'
+  },
+  listenGlyphBig: {
+    fontSize: 26
+  },
+  disabled: {
+    opacity: 0.35
+  },
+  speedChip: {
+    minWidth: 50,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    borderWidth: 1
+  },
+  speedChosen: {
+    backgroundColor: storyboundColors.brass,
+    borderColor: storyboundColors.brass
+  },
+  speedLabel: {
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  listenError: {
+    color: storyboundColors.danger,
+    fontSize: 13,
+    textAlign: 'center'
+  },
+  listenHint: {
+    fontSize: 12,
+    textAlign: 'center'
   },
   controls: {
     gap: 12,

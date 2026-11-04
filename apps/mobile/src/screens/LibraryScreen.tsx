@@ -23,13 +23,15 @@ export function LibraryScreen({
   mode,
   onChangeMode,
   onOpenBook,
-  onOpenSync
+  onOpenSync,
+  onOpenListening
 }: {
   repository: MobileRepository
   mode: AppMode
   onChangeMode: (mode: AppMode) => void
   onOpenBook: (bookId: string) => void
   onOpenSync: () => void
+  onOpenListening: () => void
 }): React.JSX.Element {
   const [books, setBooks] = useState<BookSummary[] | null>(null)
   const [libraries, setLibraries] = useState<LibrarySummary[]>([])
@@ -84,6 +86,19 @@ export function LibraryScreen({
           <Text style={styles.wordmark}>Storybound</Text>
           <Text style={styles.localLabel}>{mode === 'reader' ? 'Reader mode' : 'Editor mode'}</Text>
         </View>
+        <Pressable
+          accessibilityLabel="Open listening settings"
+          accessibilityRole="button"
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.syncButton,
+            styles.listenButton,
+            pressed && styles.pressed
+          ]}
+          onPress={onOpenListening}
+        >
+          <Text style={styles.syncGlyph}>♪</Text>
+        </Pressable>
         <Pressable
           accessibilityLabel="Open sync settings"
           accessibilityRole="button"
@@ -359,6 +374,11 @@ const styles = StyleSheet.create({
   syncGlyph: {
     color: storyboundColors.walnut,
     fontSize: 26
+  },
+  // Sits just left of the sync button, at the far end of the top bar.
+  listenButton: {
+    marginLeft: 'auto',
+    marginRight: 10
   },
   libraryTabsRow: {
     flexGrow: 0,

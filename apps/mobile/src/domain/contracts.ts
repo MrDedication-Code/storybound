@@ -258,5 +258,6 @@ export type MobileRoute =
   | { name: 'library' }
   | { name: 'book'; bookId: string }
   | { name: 'reader'; bookId: string; chapterId?: string }
+  | { name: 'listening-settings' }
   | { name: 'editor'; bookId: string; chapterId: string }
   | { name: 'sync-settings' }
