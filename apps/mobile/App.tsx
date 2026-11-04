@@ -5,7 +5,6 @@ import {
   Dimensions,
   Platform,
   SafeAreaView,
-  StatusBar as NativeStatusBar,
   StyleSheet,
   View,
   useColorScheme,
@@ -13,7 +12,7 @@ import {
 } from 'react-native'
 import { ListeningBar } from './src/components/ListeningBar'
 import { ErrorScreen, LoadingScreen } from './src/components/ScreenState'
-import { openMobileRepository, type OpenedMobileRepository } from './src/data/sqlite/openRepository'
+import { sharedRepository } from './src/data/sqlite/sharedRepository'
 import {
   DEFAULT_PREFERENCES,
   type MobilePreferences,
@@ -26,6 +25,7 @@ import { LibraryScreen } from './src/screens/LibraryScreen'
 import { ListeningSettingsScreen } from './src/screens/ListeningSettingsScreen'
 import { ReaderScreen } from './src/screens/ReaderScreen'
 import { SyncSettingsScreen } from './src/screens/SyncSettingsScreen'
+import { statusBarHeight } from './src/statusBar'
 import { createMobileSyncRuntime } from './src/sync/runtime'
 import type { MobileSyncController, MobileSyncRuntime } from './src/sync/types'
 import { storyboundColors } from './src/theme'
@@ -37,7 +37,7 @@ import { storyboundColors } from './src/theme'
 function useAndroidBarInsets(): { paddingTop: number; paddingBottom: number } | null {
   const window = useWindowDimensions()
   if (Platform.OS !== 'android') return null
-  const top = NativeStatusBar.currentHeight ?? 0
+  const top = statusBarHeight()
   const bottom = Dimensions.get('screen').height - window.height - top
   return { paddingTop: top, paddingBottom: Math.min(64, Math.max(0, bottom)) }
 }
@@ -54,16 +54,12 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     let active = true
-    let opened: OpenedMobileRepository | null = null
     let syncRuntime: MobileSyncRuntime | null = null
 
-    void openMobileRepository()
+    // Shared with Android Auto and kept open for the life of the app.
+    void sharedRepository()
       .then((next) => {
-        if (!active) {
-          void next.close()
-          return
-        }
-        opened = next
+        if (!active) return
         syncRuntime = createMobileSyncRuntime(next.syncStore)
         setRepositoryState({
           kind: 'ready',
@@ -83,7 +79,6 @@ export default function App(): React.JSX.Element {
     return () => {
       active = false
       syncRuntime?.dispose()
-      if (opened) void opened.close()
     }
   }, [openAttempt])
 

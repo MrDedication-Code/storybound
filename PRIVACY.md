@@ -50,6 +50,10 @@ Listening uses the computer's or phone's own voice unless the user chooses the G
 
 The API key is kept in the operating system's protected storage on desktop and in SecureStore on the phone. It is never stored in the library database, backups, exports, or sync, and is not sent anywhere except to Google with each request. Spoken audio is cached on the device so a passage heard again is not requested again; removing the key or clearing the app's data removes it.
 
+## Android Auto
+
+When the phone is connected to Android Auto, Storybound gives Android Auto the titles, authors and reading progress of the books on the phone, and the title and cover of the book being read, so they can be shown on the car's screen. This goes to Android Auto on the phone itself, which shows it in the car; Storybound sends nothing over the network for it. The list is also kept in the app's private storage so the car can show it before the app has started.
+
 ## Free offline voice (Kokoro)
 
 The free voice is downloaded only when the user chooses **Download the free voice** in **Settings → Listening**: the Kokoro model and voices from Hugging Face (onnx-community/Kokoro-82M-v1.0-ONNX) and Kokoro's pronunciation dictionaries from GitHub (hexgrad/misaki), each from a fixed revision and checked against a fixed SHA-256 before use. The download requests carry no library content. After that the voice runs entirely on the device: chapter text is turned into speech locally and is never sent anywhere. **Remove download** deletes the files.
