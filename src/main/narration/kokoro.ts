@@ -4,21 +4,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import {
-  float32ToPcm16,
-  KokoroPhonemizer,
-  kokoroFiles,
-  kokoroStyleRow,
-  kokoroVoice,
-  pcm16ToWav,
-  KOKORO_LEXICONS,
-  KOKORO_MODEL_FULL,
-  KOKORO_SAMPLE_RATE,
-  KOKORO_STYLE_SIZE,
-  type KokoroFile,
-  type KokoroLexicon
-} from '@storybound/narration'
-import type { InferenceSession, Tensor } from 'onnxruntime-node'
+import { kokoroFiles, KOKORO_MODEL_FULL, type KokoroFile } from '@storybound/narration'
 
 const INSTALLED_MARKER = 'installed.json'
 
@@ -33,10 +19,6 @@ export interface KokoroProgress {
  * computer.
  */
 export class KokoroEngine {
-  private session: Promise<InferenceSession> | null = null
-  private runtime: Promise<typeof import('onnxruntime-node')> | null = null
-  private readonly phonemizers = new Map<'us' | 'gb', Promise<KokoroPhonemizer>>()
-  private readonly styles = new Map<string, Promise<Float32Array>>()
   private installing: Promise<void> | null = null
   private progress: KokoroProgress | null = null
   /** Passages are spoken one at a time, so preparing ahead never competes with playback. */
@@ -46,8 +28,15 @@ export class KokoroEngine {
     private readonly folder: string,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly model: KokoroFile = KOKORO_MODEL_FULL,
-    private readonly files: KokoroFile[] = kokoroFiles(model)
+    private readonly files: KokoroFile[] = kokoroFiles(model),
+    /** Speaks a passage from the installed files; in the app, a background process does it. */
+    private readonly speak: (text: string, voiceId: string) => Promise<Uint8Array> = () =>
+      Promise.reject(new Error('The free voice is not available here.'))
   ) {}
+
+  get modelName(): string {
+    return this.model.name
+  }
 
   get downloadBytes(): number {
     return this.files.reduce((sum, file) => sum + file.bytes, 0)
@@ -80,103 +69,21 @@ export class KokoroEngine {
 
   async remove(): Promise<void> {
     await this.installing?.catch(() => undefined)
-    this.session = null
-    this.phonemizers.clear()
-    this.styles.clear()
     await rm(this.folder, { recursive: true, force: true })
   }
 
   /** One passage spoken in a voice, as WAV bytes. */
   synthesize(text: string, voiceId: string): Promise<Uint8Array> {
-    const job = this.queue.then(() => this.speak(text, voiceId))
+    const job = this.queue.then(() => this.run(text, voiceId))
     this.queue = job.catch(() => undefined)
     return job
   }
 
-  private async speak(text: string, voiceId: string): Promise<Uint8Array> {
+  private async run(text: string, voiceId: string): Promise<Uint8Array> {
     if (!(await this.isInstalled())) {
       throw new Error('Download the free voice in Settings → Listening first.')
     }
-    const voice = kokoroVoice(voiceId)
-    const [ort, session, phonemizer, styles] = await Promise.all([
-      this.loadRuntime(),
-      this.loadSession(),
-      this.loadPhonemizer(voice.accent),
-      this.loadStyles(voice.id)
-    ])
-    const pieces: Float32Array[] = []
-    for (const ids of phonemizer.tokenize(phonemizer.phonemize(text))) {
-      const row = kokoroStyleRow(ids.length)
-      const feeds: Record<string, Tensor> = {
-        [session.inputNames[0]]: new ort.Tensor(
-          'int64',
-          BigInt64Array.from(ids.map((id) => BigInt(id))),
-          [1, ids.length]
-        ),
-        [session.inputNames[1]]: new ort.Tensor(
-          'float32',
-          styles.slice(row * KOKORO_STYLE_SIZE, (row + 1) * KOKORO_STYLE_SIZE),
-          [1, KOKORO_STYLE_SIZE]
-        ),
-        [session.inputNames[2]]: new ort.Tensor('float32', Float32Array.from([1]), [1])
-      }
-      const output = await session.run(feeds)
-      pieces.push(output[session.outputNames[0]].data as Float32Array)
-    }
-    const total = pieces.reduce((sum, piece) => sum + piece.length, 0)
-    const samples = new Float32Array(total)
-    let offset = 0
-    for (const piece of pieces) {
-      samples.set(piece, offset)
-      offset += piece.length
-    }
-    return pcm16ToWav(float32ToPcm16(samples), KOKORO_SAMPLE_RATE)
-  }
-
-  private loadRuntime(): Promise<typeof import('onnxruntime-node')> {
-    this.runtime ??= import('onnxruntime-node')
-    return this.runtime
-  }
-
-  private loadSession(): Promise<InferenceSession> {
-    this.session ??= this.loadRuntime().then((ort) =>
-      ort.InferenceSession.create(join(this.folder, this.model.name), {
-        executionProviders: ['cpu'],
-        intraOpNumThreads: 4,
-        graphOptimizationLevel: 'all'
-      })
-    )
-    this.session.catch(() => {
-      this.session = null
-    })
-    return this.session
-  }
-
-  private loadPhonemizer(accent: 'us' | 'gb'): Promise<KokoroPhonemizer> {
-    let pending = this.phonemizers.get(accent)
-    if (!pending) {
-      pending = Promise.all(
-        KOKORO_LEXICONS[accent].map(
-          async (file) =>
-            JSON.parse(await readFile(join(this.folder, file.name), 'utf8')) as KokoroLexicon
-        )
-      ).then((lexicons) => new KokoroPhonemizer(lexicons, { british: accent === 'gb' }))
-      pending.catch(() => this.phonemizers.delete(accent))
-      this.phonemizers.set(accent, pending)
-    }
-    return pending
-  }
-
-  private loadStyles(voiceId: string): Promise<Float32Array> {
-    let pending = this.styles.get(voiceId)
-    if (!pending) {
-      pending = readFile(join(this.folder, `${voiceId}.bin`)).then(
-        (bytes) => new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
-      )
-      pending.catch(() => this.styles.delete(voiceId))
-      this.styles.set(voiceId, pending)
-    }
-    return pending
+    return this.speak(text, voiceId)
   }
 
   private async download(): Promise<void> {

@@ -23,6 +23,15 @@ export default defineConfig(({ mode }) => {
   return {
     main: {
       define: cloudDefine,
+      build: {
+        rollupOptions: {
+          input: {
+            index: resolve('src/main/index.ts'),
+            // The free voice runs in a background process of its own.
+            kokoroWorker: resolve('src/main/narration/kokoroWorker.ts')
+          }
+        }
+      },
       plugins: [
         externalizeDepsPlugin({
           exclude: ['@storybound/contracts', '@storybound/narration', '@storybound/sync']

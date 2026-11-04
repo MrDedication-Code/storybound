@@ -38,7 +38,17 @@ describe('free voice download', () => {
       file('voice.bin', contents['voice.bin'])
     ]
     const requested: string[] = []
-    const engine = new KokoroEngine(folder, fakeFetch(contents, requested), files[0], files)
+    const spoken: string[] = []
+    const engine = new KokoroEngine(
+      folder,
+      fakeFetch(contents, requested),
+      files[0],
+      files,
+      async (text) => {
+        spoken.push(text)
+        return new Uint8Array([1, 2, 3])
+      }
+    )
 
     expect(await engine.isInstalled()).toBe(false)
     expect(engine.downloadBytes).toBe(22)
@@ -46,6 +56,9 @@ describe('free voice download', () => {
     expect(await engine.isInstalled()).toBe(true)
     expect(await readFile(join(folder, 'voice.bin'), 'utf8')).toBe('voice bytes')
     expect(engine.installProgress).toBeNull()
+    // Passages go to the voice's process once the files are in place.
+    expect(await engine.synthesize('Hello.', 'bm_george')).toEqual(new Uint8Array([1, 2, 3]))
+    expect(spoken).toEqual(['Hello.'])
 
     // Files already in place are checked, not fetched again.
     await writeFile(join(folder, 'installed.json'), '{}')

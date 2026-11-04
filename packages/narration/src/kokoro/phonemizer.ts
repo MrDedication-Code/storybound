@@ -150,6 +150,12 @@ const SUFFIXES: {
   { ending: 'er', stems: (w) => [w.slice(0, -2), w.slice(0, -1)], add: (stem) => `${stem}əɹ` }
 ]
 
+/**
+ * Tokens given to the model at once. It takes up to 510, but its memory grows steeply with
+ * length (over a gigabyte for a long paragraph), so passages are read a sentence or two at a time.
+ */
+export const KOKORO_PIECE_TOKENS = 200
+
 /** Splits text into words (letters with inner apostrophes and hyphens) and punctuation. */
 const PIECES = /([A-Za-zÀ-ÖØ-öø-ÿĀ-ž]+(?:['-][A-Za-zÀ-ÖØ-öø-ÿĀ-ž]+)*'?)|([;:,.!?—…"“”()])/gu
 const OPENING = new Set(['“', '('])
@@ -237,8 +243,8 @@ export class KokoroPhonemizer {
   }
 
   /** Model input: token numbers in pieces short enough for one pass, padded at both ends. */
-  tokenize(phonemes: string): number[][] {
-    const limit = KOKORO_MAX_TOKENS - 2
+  tokenize(phonemes: string, maxTokens = KOKORO_PIECE_TOKENS): number[][] {
+    const limit = Math.min(maxTokens, KOKORO_MAX_TOKENS) - 2
     const chunks: number[][] = []
     for (const part of splitPhonemes(phonemes, limit)) {
       const ids = [...part].flatMap((symbol) => {

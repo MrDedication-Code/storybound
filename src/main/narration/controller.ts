@@ -4,6 +4,8 @@ import { mkdir, readdir, readFile, stat, unlink, utimes, writeFile } from 'node:
 import { join } from 'node:path'
 import { z } from 'zod'
 import {
+  kokoroFiles,
+  KOKORO_MODEL_FULL,
   KOKORO_DEFAULT_VOICE,
   KOKORO_VOICES,
   GEMINI_DEFAULT_STYLE,
@@ -23,6 +25,7 @@ import type {
 import { StoryboundError } from '../errors'
 import { SecureCredentialStorage, type CredentialProtector } from '../cloud/secureCredentials'
 import { KokoroEngine } from './kokoro'
+import { createKokoroProcessRunner } from './kokoroProcess'
 
 const SETTINGS_FILE = 'narration.json'
 const CREDENTIALS_FILE = 'narration-credentials.bin'
@@ -59,6 +62,16 @@ const DEFAULT_SETTINGS: NarrationSettings = {
   kokoroVoiceId: KOKORO_DEFAULT_VOICE
 }
 
+function createKokoroEngine(folder: string, fetchImpl: typeof fetch): KokoroEngine {
+  return new KokoroEngine(
+    folder,
+    fetchImpl,
+    KOKORO_MODEL_FULL,
+    kokoroFiles(KOKORO_MODEL_FULL),
+    createKokoroProcessRunner(folder, KOKORO_MODEL_FULL.name)
+  )
+}
+
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 
@@ -81,7 +94,7 @@ export class NarrationController {
   ) {
     this.credentials = new SecureCredentialStorage(join(dataPath, CREDENTIALS_FILE), protector)
     this.cachePath = join(dataPath, CACHE_FOLDER)
-    this.kokoro = kokoro ?? new KokoroEngine(join(dataPath, KOKORO_FOLDER), fetchImpl)
+    this.kokoro = kokoro ?? createKokoroEngine(join(dataPath, KOKORO_FOLDER), fetchImpl)
     this.settings = this.readSettings()
   }
 
