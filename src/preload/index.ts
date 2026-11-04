@@ -161,7 +161,9 @@ const api: StoryboundApi = {
     setGeminiKey: (apiKey) => invoke(IPC_CHANNELS.narrationSetGeminiKey, apiKey),
     clearGeminiKey: () => invoke(IPC_CHANNELS.narrationClearGeminiKey),
     listVoices: (input) => invoke(IPC_CHANNELS.narrationListVoices, input),
-    synthesize: (input) => invoke(IPC_CHANNELS.narrationSynthesize, input)
+    synthesize: (input) => invoke(IPC_CHANNELS.narrationSynthesize, input),
+    installKokoro: () => invoke(IPC_CHANNELS.narrationInstallKokoro),
+    removeKokoro: () => invoke(IPC_CHANNELS.narrationRemoveKokoro)
   },
   recovery: {
     get: (chapterId) => invoke(IPC_CHANNELS.recoveryGet, chapterId),

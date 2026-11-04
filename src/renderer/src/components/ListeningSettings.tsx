@@ -1,4 +1,4 @@
-import { Headphones, KeyRound, Play, Search, Trash2 } from 'lucide-react'
+import { Download, Headphones, KeyRound, Play, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { NarrationStatus, NarrationVoice } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
@@ -22,6 +22,7 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
   const [search, setSearch] = useState('')
   const [voices, setVoices] = useState<NarrationVoice[] | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [confirmRemoveKokoro, setConfirmRemoveKokoro] = useState(false)
   const previewRef = useRef<HTMLAudioElement | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -38,6 +39,20 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
     void Promise.resolve().then(refresh)
     return () => previewRef.current?.pause()
   }, [refresh])
+
+  // While the free voice downloads, its progress is read every moment.
+  const downloading = Boolean(status?.kokoro.progress) || busy === 'kokoro'
+  useEffect(() => {
+    if (!downloading) return
+    const timer = window.setInterval(() => {
+      void storyboundApi()
+        .narration.status()
+        .then((result) => {
+          if (result.ok) setStatus(result.data)
+        })
+    }, 700)
+    return () => window.clearInterval(timer)
+  }, [downloading])
 
   const run = async (name: string, action: () => Promise<void>): Promise<void> => {
     setBusy(name)
@@ -67,13 +82,14 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
       setVoices(result.voices)
     })
 
-  const preview = (voice: NarrationVoice): void =>
+  const preview = (voice: { id: string }, engine: 'gemini' | 'kokoro' = 'gemini'): void =>
     void run(`preview-${voice.id}`, async () => {
       const bytes = unwrap(
         await storyboundApi().narration.synthesize({
           text: PREVIEW_TEXT,
           style: null,
-          voiceId: voice.id
+          voiceId: voice.id,
+          engine
         })
       )
       previewRef.current?.pause()
@@ -86,6 +102,10 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
 
   const gemini = status?.gemini
   const canUseGoogle = Boolean(gemini?.hasKey && gemini.consented)
+  const kokoro = status?.kokoro
+  const kokoroVoiceName =
+    kokoro?.voices.find((voice) => voice.id === kokoro.voiceId)?.name ?? 'George'
+  const megabytes = (bytes: number): string => `${Math.round(bytes / 1_000_000)} MB`
 
   return (
     <section className="settings-section" id="listening">
@@ -115,13 +135,36 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
               </small>
             </span>
             <input
-              checked={status?.engine !== 'gemini'}
+              checked={status?.engine === 'system'}
               disabled={!status || Boolean(busy)}
               name="narration-engine"
               type="radio"
               onChange={() =>
                 apply('engine', async () =>
                   unwrap(await storyboundApi().narration.update({ engine: 'system' }))
+                )
+              }
+            />
+          </label>
+          <label className="switch-row">
+            <span>
+              <strong>Free voice · {kokoroVoiceName}</strong>
+              <small>
+                {kokoro?.installed
+                  ? 'Kokoro, a natural voice that runs on this Mac. Free, offline, and private.'
+                  : 'Download it below to use it.'}
+              </small>
+            </span>
+            <input
+              checked={status?.engine === 'kokoro'}
+              disabled={!status || !kokoro?.installed || Boolean(busy)}
+              name="narration-engine"
+              type="radio"
+              onChange={() =>
+                apply(
+                  'engine',
+                  async () => unwrap(await storyboundApi().narration.update({ engine: 'kokoro' })),
+                  'Books are now read in the free voice.'
                 )
               }
             />
@@ -150,6 +193,98 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
             />
           </label>
         </fieldset>
+      </div>
+
+      <div className="scheduled-backups assistant-block">
+        <div className="scheduled-backups__heading">
+          <div>
+            <strong>Free voice</strong>
+            <p>
+              Kokoro is an open voice model that reads on this Mac, with no account, no cost, and
+              nothing sent anywhere. It is downloaded once
+              {kokoro ? ` (${megabytes(kokoro.downloadBytes)})` : ''} from Hugging Face and checked
+              before use. It reads the words plainly; performance notes are for the Google voice.
+            </p>
+          </div>
+          <Download aria-hidden="true" size={21} />
+        </div>
+        {kokoro?.installed ? (
+          <>
+            <ul className="listening-voice-list">
+              {kokoro.voices.map((voice) => (
+                <li
+                  className={voice.id === kokoro.voiceId ? 'is-current' : undefined}
+                  key={voice.id}
+                >
+                  <span>
+                    <strong>{voice.name}</strong>
+                    <small>{voice.description}</small>
+                  </span>
+                  <Button
+                    disabled={Boolean(busy)}
+                    icon={Play}
+                    variant="quiet"
+                    onClick={() => preview(voice, 'kokoro')}
+                  >
+                    {busy === `preview-${voice.id}` ? 'Loading…' : 'Preview'}
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy) || voice.id === kokoro.voiceId}
+                    onClick={() =>
+                      apply(
+                        'voice',
+                        async () =>
+                          unwrap(
+                            await storyboundApi().narration.update({ kokoroVoiceId: voice.id })
+                          ),
+                        `The free voice is now ${voice.name}.`
+                      )
+                    }
+                  >
+                    {voice.id === kokoro.voiceId ? 'Chosen' : 'Use'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <div className="assistant-actions">
+              <Button
+                disabled={Boolean(busy)}
+                icon={Trash2}
+                variant="quiet"
+                onClick={() => setConfirmRemoveKokoro(true)}
+              >
+                Remove download
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="assistant-actions">
+            {kokoro?.progress ? (
+              <progress
+                aria-label="Downloading the free voice"
+                className="listening-progress"
+                max={kokoro.progress.total}
+                value={kokoro.progress.received}
+              />
+            ) : null}
+            <Button
+              disabled={Boolean(busy) || !kokoro}
+              icon={Download}
+              variant="primary"
+              onClick={() =>
+                apply(
+                  'kokoro',
+                  async () => unwrap(await storyboundApi().narration.installKokoro()),
+                  'The free voice is ready.'
+                )
+              }
+            >
+              {kokoro?.progress
+                ? `Downloading… ${megabytes(kokoro.progress.received)} of ${megabytes(kokoro.progress.total)}`
+                : 'Download the free voice'}
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="scheduled-backups assistant-block">
@@ -351,6 +486,23 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
         ) : null}
       </div>
 
+      {confirmRemoveKokoro ? (
+        <ConfirmDialog
+          confirmLabel="Remove"
+          dangerous
+          description="The free voice's files are deleted from this Mac. You can download them again at any time."
+          title="Remove the free voice?"
+          onClose={() => setConfirmRemoveKokoro(false)}
+          onConfirm={() => {
+            setConfirmRemoveKokoro(false)
+            apply(
+              'remove-kokoro',
+              async () => unwrap(await storyboundApi().narration.removeKokoro()),
+              'The free voice was removed.'
+            )
+          }}
+        />
+      ) : null}
       {confirmRemove ? (
         <ConfirmDialog
           confirmLabel="Remove key"

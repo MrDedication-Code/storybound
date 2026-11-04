@@ -106,6 +106,8 @@ export const IPC_CHANNELS = {
   narrationClearGeminiKey: 'storybound:narration:clear-gemini-key',
   narrationListVoices: 'storybound:narration:list-voices',
   narrationSynthesize: 'storybound:narration:synthesize',
+  narrationInstallKokoro: 'storybound:narration:install-kokoro',
+  narrationRemoveKokoro: 'storybound:narration:remove-kokoro',
   recoveryGet: 'storybound:recovery:get',
   recoverySave: 'storybound:recovery:save',
   recoveryClear: 'storybound:recovery:clear',

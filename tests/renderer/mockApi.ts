@@ -183,6 +183,15 @@ export const narrationStatus: NarrationStatus = {
     voiceName: 'Riko',
     style: 'Rich, velvety, unhurried audiobook narration',
     model: 'gemini-3.8-flash-tts'
+  },
+  kokoro: {
+    installed: false,
+    progress: null,
+    downloadBytes: 346_000_000,
+    voiceId: 'bm_george',
+    voices: [
+      { id: 'bm_george', name: 'George', accent: 'gb', description: 'Classic British storyteller' }
+    ]
   }
 }
 
@@ -554,7 +563,9 @@ export function makeApi(): StoryboundApi {
       ),
       clearGeminiKey: vi.fn(async () => ok(narrationStatus)),
       listVoices: vi.fn(async () => ok({ voices: [], nextPageToken: null })),
-      synthesize: vi.fn(async () => ok(new Uint8Array()))
+      synthesize: vi.fn(async () => ok(new Uint8Array())),
+      installKokoro: vi.fn(async () => ok(narrationStatus)),
+      removeKokoro: vi.fn(async () => ok(narrationStatus))
     },
     agentBridge: {
       status: vi.fn(async () => ok(agentBridgeStatus)),

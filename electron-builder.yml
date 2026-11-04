@@ -24,19 +24,27 @@ files:
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**
+  - node_modules/onnxruntime-node/**
 win:
+  files:
+    - '!node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**'
   executableName: Storybound
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+# The free voice's runtime ships binaries for every system; each build keeps only its own.
 mac:
+  files:
+    - '!node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**'
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  files:
+    - '!node_modules/onnxruntime-node/bin/napi-v6/{darwin,win32}/**'
   target:
     - AppImage
     - deb

@@ -410,6 +410,8 @@ export function registerStoryboundIpc({
   handle(IPC_CHANNELS.narrationSynthesize, narrationSynthesisSchema, (input) =>
     narration.synthesize(input)
   )
+  handle(IPC_CHANNELS.narrationInstallKokoro, noInput, () => narration.installKokoro())
+  handle(IPC_CHANNELS.narrationRemoveKokoro, noInput, () => narration.removeKokoro())
   handle(IPC_CHANNELS.recoveryGet, idSchema, (id) => store.getRecoveryDraft(id))
   handle(IPC_CHANNELS.recoverySave, saveRecoveryDraftSchema, (input) =>
     store.saveRecoveryDraft(input)

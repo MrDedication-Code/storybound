@@ -522,7 +522,8 @@ export const narrationSettingsSchema = z
     geminiVoiceId: z.string().trim().min(1).max(200),
     geminiVoiceName: z.string().trim().min(1).max(200),
     geminiStyle: z.string().max(500),
-    geminiConsent: z.boolean()
+    geminiConsent: z.boolean(),
+    kokoroVoiceId: z.string().trim().min(1).max(100)
   })
   .partial()
 
@@ -541,7 +542,8 @@ export const narrationVoiceQuerySchema = z.object({
 export const narrationSynthesisSchema = z.object({
   text: z.string().min(1).max(6000),
   style: z.string().max(500).nullable(),
-  voiceId: z.string().min(1).max(200).optional()
+  voiceId: z.string().min(1).max(200).optional(),
+  engine: z.enum(['gemini', 'kokoro']).optional()
 })
 
 export const saveRecoveryDraftSchema = z.object({

@@ -524,18 +524,32 @@ export function ReaderPage({
   }
 
   const narratorVoice = (status: NarrationStatus | null): NarratorVoice =>
-    status?.engine === 'gemini' && status.gemini.hasKey && status.gemini.consented
+    status?.engine === 'kokoro' && status.kokoro.installed
       ? {
           kind: 'audio',
+          // The free voice reads the words; performance notes are for Google's voice.
           synthesize: async (segment) =>
             unwrap(
               await storyboundApi().narration.synthesize({
-                text: segment.text,
-                style: segment.style
+                text: segment.plainText,
+                style: null,
+                engine: 'kokoro'
               })
             )
         }
-      : { kind: 'system' }
+      : status?.engine === 'gemini' && status.gemini.hasKey && status.gemini.consented
+        ? {
+            kind: 'audio',
+            synthesize: async (segment) =>
+              unwrap(
+                await storyboundApi().narration.synthesize({
+                  text: segment.text,
+                  style: segment.style,
+                  engine: 'gemini'
+                })
+              )
+          }
+        : { kind: 'system' }
 
   const followPassage = useEffectEvent((progress: number): void => {
     // The page follows the voice, and where it has got to becomes the reading position.
@@ -670,10 +684,15 @@ export function ReaderPage({
     void storyboundApi().narration.update({ speed: rate })
   }
 
+  const kokoroName =
+    narration?.kokoro.voices.find((voice) => voice.id === narration.kokoro.voiceId)?.name ??
+    'Kokoro'
   const voiceLabel =
-    narratorVoice(narration).kind === 'audio'
-      ? `${narration?.gemini.voiceName ?? 'Google'} · Google`
-      : 'System voice'
+    narratorVoice(narration).kind === 'system'
+      ? 'System voice'
+      : narration?.engine === 'kokoro'
+        ? `${kokoroName} · free voice`
+        : `${narration?.gemini.voiceName ?? 'Google'} · Google`
 
   const chapterHighlights = useMemo(
     () =>

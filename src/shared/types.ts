@@ -770,6 +770,15 @@ export interface NarrationStatus {
     style: string
     model: string
   }
+  /** Kokoro, the free voice that runs on this computer once downloaded. */
+  kokoro: {
+    installed: boolean
+    /** Bytes downloaded so far while the voice is being downloaded. */
+    progress: { received: number; total: number } | null
+    downloadBytes: number
+    voiceId: string
+    voices: { id: string; name: string; accent: 'us' | 'gb'; description: string }[]
+  }
 }
 
 export interface NarrationSettingsInput {
@@ -779,6 +788,7 @@ export interface NarrationSettingsInput {
   geminiVoiceName?: string
   geminiStyle?: string
   geminiConsent?: boolean
+  kokoroVoiceId?: string
 }
 
 export interface NarrationVoice {
@@ -801,6 +811,8 @@ export interface NarrationSynthesisInput {
   style: string | null
   /** Overrides the chosen voice, for previews in the voice picker. */
   voiceId?: string
+  /** Which voice makes the audio; the chosen one when left out. */
+  engine?: 'gemini' | 'kokoro'
 }
 
 export interface ContentChangedDetail {
@@ -967,6 +979,8 @@ export interface StoryboundApi {
       pageToken?: string
     }): Promise<ApiResult<NarrationVoiceList>>
     synthesize(input: NarrationSynthesisInput): Promise<ApiResult<Uint8Array>>
+    installKokoro(): Promise<ApiResult<NarrationStatus>>
+    removeKokoro(): Promise<ApiResult<NarrationStatus>>
   }
   recovery: {
     get(chapterId: string): Promise<ApiResult<RecoveryDraft | null>>

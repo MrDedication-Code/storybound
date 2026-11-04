@@ -4232,3 +4232,8 @@ kbd {
 .listening-voice-list small {
   color: var(--muted);
 }
+.listening-progress {
+  flex: 1;
+  height: 8px;
+  accent-color: var(--accent);
+}

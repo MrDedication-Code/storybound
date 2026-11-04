@@ -4,6 +4,8 @@ import { mkdir, readdir, readFile, stat, unlink, utimes, writeFile } from 'node:
 import { join } from 'node:path'
 import { z } from 'zod'
 import {
+  KOKORO_DEFAULT_VOICE,
+  KOKORO_VOICES,
   GEMINI_DEFAULT_STYLE,
   GEMINI_DEFAULT_VOICE,
   GEMINI_TTS_MODEL,
@@ -20,11 +22,13 @@ import type {
 } from '../../shared/types'
 import { StoryboundError } from '../errors'
 import { SecureCredentialStorage, type CredentialProtector } from '../cloud/secureCredentials'
+import { KokoroEngine } from './kokoro'
 
 const SETTINGS_FILE = 'narration.json'
 const CREDENTIALS_FILE = 'narration-credentials.bin'
 const GEMINI_KEY = 'gemini-api-key'
 const CACHE_FOLDER = 'narration-cache'
+const KOKORO_FOLDER = join('voices', 'kokoro')
 /** Cached audio is trimmed, oldest listened-to first, once it passes this size. */
 const CACHE_LIMIT_BYTES = 1.5 * 1024 * 1024 * 1024
 const RETRY_DELAYS_MS = [2000, 6000]
@@ -38,7 +42,8 @@ const settingsSchema = z.object({
   geminiVoiceId: z.string().min(1).max(200),
   geminiVoiceName: z.string().min(1).max(200),
   geminiStyle: z.string().max(500),
-  geminiConsentedAt: z.string().nullable()
+  geminiConsentedAt: z.string().nullable(),
+  kokoroVoiceId: z.string().min(1).max(100).default(KOKORO_DEFAULT_VOICE)
 })
 
 type NarrationSettings = z.infer<typeof settingsSchema>
@@ -50,7 +55,8 @@ const DEFAULT_SETTINGS: NarrationSettings = {
   geminiVoiceId: GEMINI_DEFAULT_VOICE,
   geminiVoiceName: GEMINI_DEFAULT_VOICE,
   geminiStyle: GEMINI_DEFAULT_STYLE,
-  geminiConsentedAt: null
+  geminiConsentedAt: null,
+  kokoroVoiceId: KOKORO_DEFAULT_VOICE
 }
 
 const wait = (milliseconds: number): Promise<void> =>
@@ -65,14 +71,17 @@ export class NarrationController {
   private settings: NarrationSettings
   private readonly credentials: SecureCredentialStorage
   private readonly cachePath: string
+  private readonly kokoro: KokoroEngine
 
   constructor(
     private readonly dataPath: string,
     protector: CredentialProtector,
-    private readonly fetchImpl: typeof fetch = fetch
+    private readonly fetchImpl: typeof fetch = fetch,
+    kokoro?: KokoroEngine
   ) {
     this.credentials = new SecureCredentialStorage(join(dataPath, CREDENTIALS_FILE), protector)
     this.cachePath = join(dataPath, CACHE_FOLDER)
+    this.kokoro = kokoro ?? new KokoroEngine(join(dataPath, KOKORO_FOLDER), fetchImpl)
     this.settings = this.readSettings()
   }
 
@@ -88,8 +97,43 @@ export class NarrationController {
         voiceName: this.settings.geminiVoiceName,
         style: this.settings.geminiStyle,
         model: GEMINI_TTS_MODEL
+      },
+      kokoro: {
+        installed: await this.kokoro.isInstalled(),
+        progress: this.kokoro.installProgress,
+        downloadBytes: this.kokoro.downloadBytes,
+        voiceId: this.settings.kokoroVoiceId,
+        voices: KOKORO_VOICES.map(({ id, name, accent, description }) => ({
+          id,
+          name,
+          accent,
+          description
+        }))
       }
     }
+  }
+
+  /** Downloads the free voice; status() reports progress while it runs. */
+  async installKokoro(): Promise<NarrationStatus> {
+    try {
+      await this.kokoro.install()
+    } catch (error) {
+      throw new StoryboundError(
+        'NETWORK_ERROR',
+        error instanceof Error ? error.message : 'The free voice could not be downloaded.',
+        error
+      )
+    }
+    return this.status()
+  }
+
+  async removeKokoro(): Promise<NarrationStatus> {
+    await this.kokoro.remove()
+    if (this.settings.engine === 'kokoro') {
+      this.settings = { ...this.settings, engine: 'system' }
+      this.writeSettings()
+    }
+    return this.status()
   }
 
   async update(input: NarrationSettingsInput): Promise<NarrationStatus> {
@@ -99,10 +143,19 @@ export class NarrationController {
     if (input.geminiVoiceId !== undefined) next.geminiVoiceId = input.geminiVoiceId
     if (input.geminiVoiceName !== undefined) next.geminiVoiceName = input.geminiVoiceName
     if (input.geminiStyle !== undefined) next.geminiStyle = input.geminiStyle.trim()
+    if (input.kokoroVoiceId !== undefined) {
+      if (!KOKORO_VOICES.some((voice) => voice.id === input.kokoroVoiceId)) {
+        throw new StoryboundError('VALIDATION_ERROR', 'That voice is not one of the free voices.')
+      }
+      next.kokoroVoiceId = input.kokoroVoiceId
+    }
     if (input.geminiConsent === true && !next.geminiConsentedAt) {
       next.geminiConsentedAt = new Date().toISOString()
     }
     if (input.geminiConsent === false) next.geminiConsentedAt = null
+    if (input.engine === 'kokoro' && !(await this.kokoro.isInstalled())) {
+      throw new StoryboundError('VALIDATION_ERROR', 'Download the free voice first.')
+    }
     if (next.engine === 'gemini' && !next.geminiConsentedAt) {
       throw new StoryboundError(
         'VALIDATION_ERROR',
@@ -155,6 +208,21 @@ export class NarrationController {
 
   /** Spoken audio for one passage, as WAV bytes, from the cache when it has been heard before. */
   async synthesize(input: NarrationSynthesisInput): Promise<Uint8Array> {
+    const engine = input.engine ?? (this.settings.engine === 'kokoro' ? 'kokoro' : 'gemini')
+    if (engine === 'kokoro') {
+      try {
+        return await this.kokoro.synthesize(
+          input.text,
+          input.voiceId ?? this.settings.kokoroVoiceId
+        )
+      } catch (error) {
+        throw new StoryboundError(
+          'VALIDATION_ERROR',
+          error instanceof Error ? error.message : 'The free voice could not read this passage.',
+          error
+        )
+      }
+    }
     if (!this.settings.geminiConsentedAt) {
       throw new StoryboundError(
         'VALIDATION_ERROR',

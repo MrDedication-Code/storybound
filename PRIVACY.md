@@ -50,6 +50,10 @@ Listening uses the computer's or phone's own voice unless the user chooses the G
 
 The API key is kept in the operating system's protected storage on desktop and in SecureStore on the phone. It is never stored in the library database, backups, exports, or sync, and is not sent anywhere except to Google with each request. Spoken audio is cached on the device so a passage heard again is not requested again; removing the key or clearing the app's data removes it.
 
+## Free offline voice (Kokoro)
+
+The free voice is downloaded only when the user chooses **Download the free voice** in **Settings → Listening**: the Kokoro model and voices from Hugging Face (onnx-community/Kokoro-82M-v1.0-ONNX) and Kokoro's pronunciation dictionaries from GitHub (hexgrad/misaki), each from a fixed revision and checked against a fixed SHA-256 before use. The download requests carry no library content. After that the voice runs entirely on the device: chapter text is turned into speech locally and is never sent anywhere. **Remove download** deletes the files.
+
 ## Optional AI assistant connections (Claude and the inbox folder)
 
 Both connections are off by default and are controlled in **Settings → AI assistants**.
