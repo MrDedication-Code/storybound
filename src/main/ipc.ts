@@ -32,8 +32,12 @@ import {
   idSchema,
   encryptedTransferSchema,
   libraryQuerySchema,
+  geminiApiKeySchema,
   locateSearchHitSchema,
   mergeChapterSchema,
+  narrationSettingsSchema,
+  narrationSynthesisSchema,
+  narrationVoiceQuerySchema,
   optionalLibraryIdSchema,
   reorderChaptersSchema,
   restoreChapterRevisionSchema,
@@ -77,11 +81,13 @@ import { buildOfflineCompanionHtml } from './companionExport'
 import type { StoryboundStore } from './store'
 import type { StoryboundSyncController } from './cloud/syncController'
 import { INBOX_INSTRUCTIONS, type AgentBridgeController } from './agentBridge'
+import type { NarrationController } from './narration/controller'
 
 interface IpcDependencies {
   store: StoryboundStore
   sync: StoryboundSyncController
   agentBridge: AgentBridgeController
+  narration: NarrationController
   logger: AppLogger
   getWindow: () => BrowserWindow | null
 }
@@ -112,6 +118,7 @@ export function registerStoryboundIpc({
   store,
   sync,
   agentBridge,
+  narration,
   logger,
   getWindow
 }: IpcDependencies): () => void {
@@ -390,6 +397,18 @@ export function registerStoryboundIpc({
     IPC_CHANNELS.syncResolveConflict,
     z.object({ id: idSchema, resolution: z.enum(['keep-local', 'use-remote']) }),
     (input) => sync.resolveConflict(input.id, input.resolution)
+  )
+  handle(IPC_CHANNELS.narrationStatus, noInput, () => narration.status())
+  handle(IPC_CHANNELS.narrationUpdate, narrationSettingsSchema, (input) => narration.update(input))
+  handle(IPC_CHANNELS.narrationSetGeminiKey, geminiApiKeySchema, (apiKey) =>
+    narration.setGeminiKey(apiKey)
+  )
+  handle(IPC_CHANNELS.narrationClearGeminiKey, noInput, () => narration.clearGeminiKey())
+  handle(IPC_CHANNELS.narrationListVoices, narrationVoiceQuerySchema, (input) =>
+    narration.listVoices(input)
+  )
+  handle(IPC_CHANNELS.narrationSynthesize, narrationSynthesisSchema, (input) =>
+    narration.synthesize(input)
   )
   handle(IPC_CHANNELS.recoveryGet, idSchema, (id) => store.getRecoveryDraft(id))
   handle(IPC_CHANNELS.recoverySave, saveRecoveryDraftSchema, (input) =>

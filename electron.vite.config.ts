@@ -23,10 +23,18 @@ export default defineConfig(({ mode }) => {
   return {
     main: {
       define: cloudDefine,
-      plugins: [externalizeDepsPlugin({ exclude: ['@storybound/contracts', '@storybound/sync'] })]
+      plugins: [
+        externalizeDepsPlugin({
+          exclude: ['@storybound/contracts', '@storybound/narration', '@storybound/sync']
+        })
+      ]
     },
     preload: {
-      plugins: [externalizeDepsPlugin({ exclude: ['@storybound/contracts', '@storybound/sync'] })]
+      plugins: [
+        externalizeDepsPlugin({
+          exclude: ['@storybound/contracts', '@storybound/narration', '@storybound/sync']
+        })
+      ]
     },
     renderer: {
       resolve: {

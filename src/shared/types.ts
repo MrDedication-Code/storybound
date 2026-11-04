@@ -754,6 +754,55 @@ export interface InboxScanResult {
   skipped: number
 }
 
+export type NarrationEngine = 'system' | 'gemini' | 'kokoro'
+
+export interface NarrationStatus {
+  engine: NarrationEngine
+  /** Playback speed, 1 being normal. */
+  speed: number
+  gemini: {
+    hasKey: boolean
+    /** The writer agreed that chapter text is sent to Google to make the audio. */
+    consented: boolean
+    voiceId: string
+    voiceName: string
+    /** The default reading style; a paragraph's own performance note replaces it. */
+    style: string
+    model: string
+  }
+}
+
+export interface NarrationSettingsInput {
+  engine?: NarrationEngine
+  speed?: number
+  geminiVoiceId?: string
+  geminiVoiceName?: string
+  geminiStyle?: string
+  geminiConsent?: boolean
+}
+
+export interface NarrationVoice {
+  id: string
+  name: string
+  description: string
+  gender: string | null
+  accent: string | null
+  pitch: string | null
+  languageCode: string | null
+}
+
+export interface NarrationVoiceList {
+  voices: NarrationVoice[]
+  nextPageToken: string | null
+}
+
+export interface NarrationSynthesisInput {
+  text: string
+  style: string | null
+  /** Overrides the chosen voice, for previews in the voice picker. */
+  voiceId?: string
+}
+
 export interface ContentChangedDetail {
   bookId: string
   chapterId: string | null
@@ -907,6 +956,17 @@ export interface StoryboundApi {
     revokeDevice(deviceId: string): Promise<ApiResult<SyncRuntimeStatus>>
     listConflicts(): Promise<ApiResult<SyncConflictRecord[]>>
     resolveConflict(input: SyncResolveConflictInput): Promise<ApiResult<SyncRunResult>>
+  }
+  narration: {
+    status(): Promise<ApiResult<NarrationStatus>>
+    update(input: NarrationSettingsInput): Promise<ApiResult<NarrationStatus>>
+    setGeminiKey(apiKey: string): Promise<ApiResult<NarrationStatus>>
+    clearGeminiKey(): Promise<ApiResult<NarrationStatus>>
+    listVoices(input: {
+      search?: string
+      pageToken?: string
+    }): Promise<ApiResult<NarrationVoiceList>>
+    synthesize(input: NarrationSynthesisInput): Promise<ApiResult<Uint8Array>>
   }
   recovery: {
     get(chapterId: string): Promise<ApiResult<RecoveryDraft | null>>

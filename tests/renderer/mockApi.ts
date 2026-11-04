@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type {
+  NarrationStatus,
   AgentBridgeStatus,
   ApiResult,
   Annotation,
@@ -170,6 +171,19 @@ const storyRelation: StoryEntityRelation = {
   createdAt: timestamp,
   updatedAt: timestamp,
   rowVersion: 1
+}
+
+export const narrationStatus: NarrationStatus = {
+  engine: 'system',
+  speed: 1,
+  gemini: {
+    hasKey: false,
+    consented: false,
+    voiceId: 'Riko',
+    voiceName: 'Riko',
+    style: 'Rich, velvety, unhurried audiobook narration',
+    model: 'gemini-3.8-flash-tts'
+  }
 }
 
 export function ok<T>(data: T): ApiResult<T> {
@@ -531,6 +545,16 @@ export function makeApi(): StoryboundApi {
     settings: {
       get: vi.fn(async () => ok(settings)),
       update: vi.fn(async (input) => ok({ ...settings, ...input }))
+    },
+    narration: {
+      status: vi.fn(async () => ok(narrationStatus)),
+      update: vi.fn(async (input) => ok({ ...narrationStatus, ...input })),
+      setGeminiKey: vi.fn(async () =>
+        ok({ ...narrationStatus, gemini: { ...narrationStatus.gemini, hasKey: true } })
+      ),
+      clearGeminiKey: vi.fn(async () => ok(narrationStatus)),
+      listVoices: vi.fn(async () => ok({ voices: [], nextPageToken: null })),
+      synthesize: vi.fn(async () => ok(new Uint8Array()))
     },
     agentBridge: {
       status: vi.fn(async () => ok(agentBridgeStatus)),

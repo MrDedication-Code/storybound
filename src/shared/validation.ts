@@ -515,6 +515,35 @@ export const settingsUpdateSchema = z
   })
   .partial()
 
+export const narrationSettingsSchema = z
+  .object({
+    engine: z.enum(['system', 'gemini', 'kokoro']),
+    speed: z.number().min(0.5).max(2.5),
+    geminiVoiceId: z.string().trim().min(1).max(200),
+    geminiVoiceName: z.string().trim().min(1).max(200),
+    geminiStyle: z.string().max(500),
+    geminiConsent: z.boolean()
+  })
+  .partial()
+
+export const geminiApiKeySchema = z
+  .string()
+  .trim()
+  .min(20, 'That does not look like a Google API key.')
+  .max(200)
+  .regex(/^[A-Za-z0-9_-]+$/, 'That does not look like a Google API key.')
+
+export const narrationVoiceQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  pageToken: z.string().max(500).optional()
+})
+
+export const narrationSynthesisSchema = z.object({
+  text: z.string().min(1).max(6000),
+  style: z.string().max(500).nullable(),
+  voiceId: z.string().min(1).max(200).optional()
+})
+
 export const saveRecoveryDraftSchema = z.object({
   chapterId: idSchema,
   title: titleSchema,

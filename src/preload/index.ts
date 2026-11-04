@@ -155,6 +155,14 @@ const api: StoryboundApi = {
     listConflicts: () => invoke(IPC_CHANNELS.syncListConflicts),
     resolveConflict: (input) => invoke(IPC_CHANNELS.syncResolveConflict, input)
   },
+  narration: {
+    status: () => invoke(IPC_CHANNELS.narrationStatus),
+    update: (input) => invoke(IPC_CHANNELS.narrationUpdate, input),
+    setGeminiKey: (apiKey) => invoke(IPC_CHANNELS.narrationSetGeminiKey, apiKey),
+    clearGeminiKey: () => invoke(IPC_CHANNELS.narrationClearGeminiKey),
+    listVoices: (input) => invoke(IPC_CHANNELS.narrationListVoices, input),
+    synthesize: (input) => invoke(IPC_CHANNELS.narrationSynthesize, input)
+  },
   recovery: {
     get: (chapterId) => invoke(IPC_CHANNELS.recoveryGet, chapterId),
     save: (input) => invoke(IPC_CHANNELS.recoverySave, input),

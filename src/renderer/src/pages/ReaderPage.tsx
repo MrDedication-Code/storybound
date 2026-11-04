@@ -12,6 +12,8 @@ import {
   Play,
   Plus,
   Settings2,
+  SkipBack,
+  SkipForward,
   Square,
   StickyNote,
   Trash2,
@@ -34,6 +36,7 @@ import type {
   Bookmark as BookmarkType,
   BookDetail,
   Chapter,
+  NarrationStatus,
   ReaderFont,
   ReaderTheme,
   TextAlignment
@@ -41,6 +44,7 @@ import type {
 import { calculateReadingProgress } from '@shared/text'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
 import type { PrepareCloseDetail } from '../lib/events'
+import { Narrator, type NarratorState, type NarratorVoice } from '../lib/narrator'
 import { navigate, routes } from '../lib/routing'
 import { Button, ErrorState, IconButton, InlineNotice, LoadingState, Modal } from '../components/ui'
 import { StoryMarkdown } from '../components/StoryMarkdown'
@@ -125,9 +129,13 @@ export function ReaderPage({
   const [editingBookmark, setEditingBookmark] = useState<BookmarkType | null>(null)
   const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null)
   const [selectionDraft, setSelectionDraft] = useState<AnnotationDraft | null>(null)
-  const [speechState, setSpeechState] = useState<'idle' | 'playing' | 'paused'>('idle')
+  const [speechState, setSpeechState] = useState<NarratorState>('idle')
   const [speechRate, setSpeechRate] = useState(1)
   const [speechOpen, setSpeechOpen] = useState(false)
+  const [narration, setNarration] = useState<NarrationStatus | null>(null)
+  const narratorRef = useRef<Narrator | null>(null)
+  // Set when a chapter ends while listening, so the next chapter starts playing once it loads.
+  const continueListeningRef = useRef(false)
   const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLElement>(null)
@@ -515,40 +523,157 @@ export function ReaderPage({
     }
   }
 
+  const narratorVoice = (status: NarrationStatus | null): NarratorVoice =>
+    status?.engine === 'gemini' && status.gemini.hasKey && status.gemini.consented
+      ? {
+          kind: 'audio',
+          synthesize: async (segment) =>
+            unwrap(
+              await storyboundApi().narration.synthesize({
+                text: segment.text,
+                style: segment.style
+              })
+            )
+        }
+      : { kind: 'system' }
+
+  const followPassage = useEffectEvent((progress: number): void => {
+    // The page follows the voice, and where it has got to becomes the reading position.
+    positionRef.current = progress
+    const container = scrollRef.current
+    if (container) {
+      const maximum = Math.max(0, container.scrollHeight - container.clientHeight)
+      if (typeof container.scrollTo === 'function') {
+        container.scrollTo({ top: maximum * progress, behavior: 'smooth' })
+      } else {
+        container.scrollTop = maximum * progress
+      }
+    }
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = window.setTimeout(() => void savePosition(), 800)
+  })
+
+  const finishChapter = useEffectEvent((): void => {
+    if (!book || !chapter) return
+    const index = book.chapters.findIndex((item) => item.id === chapter.id)
+    const next = book.chapters[index + 1]
+    if (!next) {
+      notify('That was the last chapter.')
+      return
+    }
+    continueListeningRef.current = true
+    void goToChapter(next.id, 0)
+  })
+
+  useEffect(() => {
+    const narrator = new Narrator(
+      { kind: 'system' },
+      {
+        onState: setSpeechState,
+        onPassage: (_segment, progress) => followPassage(progress),
+        onChapterEnd: () => finishChapter(),
+        onError: setError
+      }
+    )
+    narratorRef.current = narrator
+    return () => {
+      narrator.dispose()
+      narratorRef.current = null
+    }
+  }, [])
+
+  const refreshNarration = useEffectEvent(async (): Promise<void> => {
+    try {
+      const status = unwrap(await storyboundApi().narration.status())
+      setNarration(status)
+      setSpeechRate(status.speed)
+      narratorRef.current?.setRate(status.speed)
+      narratorRef.current?.setVoice(narratorVoice(status))
+    } catch {
+      // Listening falls back to the system voice.
+    }
+  })
+
+  useEffect(() => {
+    void Promise.resolve().then(() => refreshNarration())
+    const onFocus = (): void => void refreshNarration()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  useEffect(() => {
+    const narrator = narratorRef.current
+    if (!narrator || !chapter) return
+    const keepGoing = continueListeningRef.current
+    continueListeningRef.current = false
+    narrator.load(chapter, keepGoing || positionRef.current >= 0.98 ? 0 : positionRef.current)
+    if (keepGoing) narrator.play()
+  }, [chapter])
+
+  // The Mac's media keys, headphone buttons, and Now Playing control the reading.
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !book || !chapter) return
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: chapter.title,
+      artist: book.title,
+      album: 'Storybound'
+    })
+    const narrator = narratorRef.current
+    navigator.mediaSession.setActionHandler('play', () => narrator?.play())
+    navigator.mediaSession.setActionHandler('pause', () => narrator?.pause())
+    navigator.mediaSession.setActionHandler('nexttrack', () => narrator?.next())
+    navigator.mediaSession.setActionHandler('previoustrack', () => narrator?.previous())
+    return () => {
+      for (const action of ['play', 'pause', 'nexttrack', 'previoustrack'] as const) {
+        navigator.mediaSession.setActionHandler(action, null)
+      }
+    }
+  }, [book, chapter])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState =
+      speechState === 'playing' || speechState === 'loading'
+        ? 'playing'
+        : speechState === 'paused'
+          ? 'paused'
+          : 'none'
+  }, [speechState])
+
   const toggleSpeech = (): void => {
-    if (!chapter) return
-    const synthesis = window.speechSynthesis
-    if (!synthesis || typeof SpeechSynthesisUtterance === 'undefined') {
-      setError('Text-to-speech is not available on this computer.')
+    const narrator = narratorRef.current
+    if (!chapter || !narrator) return
+    if (speechState === 'playing' || speechState === 'loading') {
+      narrator.pause()
       return
     }
-    if (speechState === 'playing') {
-      synthesis.pause()
-      setSpeechState('paused')
-      return
+    if (speechState === 'idle') {
+      if (narratorVoice(narration).kind === 'system' && !window.speechSynthesis) {
+        setError('Text-to-speech is not available on this computer.')
+        return
+      }
+      // Start from wherever the reader has scrolled to; at the very end (or when the whole chapter
+      // fits on screen) start the chapter from the top.
+      const position = positionRef.current >= 0.98 ? 0 : positionRef.current
+      narrator.load(chapter, position)
     }
-    if (speechState === 'paused') {
-      synthesis.resume()
-      setSpeechState('playing')
-      return
-    }
-    const utterance = new SpeechSynthesisUtterance(`${chapter.title}. ${chapter.content}`)
-    utterance.rate = speechRate
-    utterance.onend = () => setSpeechState('idle')
-    utterance.onerror = () => setSpeechState('idle')
-    synthesis.cancel()
-    synthesis.speak(utterance)
-    setSpeechState('playing')
+    narrator.play()
   }
 
   const stopSpeech = (): void => {
-    window.speechSynthesis?.cancel()
-    setSpeechState('idle')
+    narratorRef.current?.stop()
   }
 
-  useEffect(() => {
-    return () => window.speechSynthesis?.cancel()
-  }, [chapter?.id])
+  const changeSpeechRate = (rate: number): void => {
+    setSpeechRate(rate)
+    narratorRef.current?.setRate(rate)
+    void storyboundApi().narration.update({ speed: rate })
+  }
+
+  const voiceLabel =
+    narratorVoice(narration).kind === 'audio'
+      ? `${narration?.gemini.voiceName ?? 'Google'} · Google`
+      : 'System voice'
 
   const chapterHighlights = useMemo(
     () =>
@@ -657,41 +782,72 @@ export function ReaderPage({
             aria-expanded={speechOpen}
             className={speechState !== 'idle' ? 'is-active' : ''}
             icon={Volume2}
-            label="Read aloud"
+            label="Listen"
             onClick={() => setSpeechOpen((value) => !value)}
           />
         </div>
       </header>
 
       {speechOpen ? (
-        <div className="reader-speech" role="region" aria-label="Read aloud controls">
-          <Button icon={speechState === 'playing' ? Pause : Play} onClick={toggleSpeech}>
-            {speechState === 'playing'
+        <div className="reader-speech" role="region" aria-label="Listening controls">
+          <IconButton
+            disabled={!chapter}
+            icon={SkipBack}
+            label="Previous passage"
+            onClick={() => narratorRef.current?.previous()}
+          />
+          <Button
+            icon={speechState === 'playing' || speechState === 'loading' ? Pause : Play}
+            onClick={toggleSpeech}
+          >
+            {speechState === 'playing' || speechState === 'loading'
               ? 'Pause'
               : speechState === 'paused'
                 ? 'Resume'
-                : 'Read chapter'}
+                : 'Play'}
           </Button>
+          <IconButton
+            disabled={!chapter}
+            icon={SkipForward}
+            label="Next passage"
+            onClick={() => narratorRef.current?.next()}
+          />
           <IconButton
             disabled={speechState === 'idle'}
             icon={Square}
-            label="Stop reading aloud"
+            label="Stop listening"
             onClick={stopSpeech}
           />
           <label>
             <span>Speed</span>
             <select
               value={speechRate}
-              onChange={(event) => setSpeechRate(Number(event.target.value))}
+              onChange={(event) => changeSpeechRate(Number(event.target.value))}
             >
               <option value="0.75">0.75×</option>
+              <option value="0.9">0.9×</option>
               <option value="1">1×</option>
+              <option value="1.1">1.1×</option>
               <option value="1.25">1.25×</option>
               <option value="1.5">1.5×</option>
               <option value="2">2×</option>
             </select>
           </label>
-          <span aria-live="polite">{speechState === 'idle' ? 'Ready' : speechState}</span>
+          <span className="reader-speech-voice">{voiceLabel}</span>
+          <span aria-live="polite">
+            {speechState === 'loading'
+              ? 'Preparing…'
+              : speechState === 'playing'
+                ? 'Listening'
+                : speechState === 'paused'
+                  ? 'Paused'
+                  : 'Ready'}
+          </span>
+          {narratorVoice(narration).kind === 'system' ? (
+            <Button variant="quiet" onClick={() => navigate(routes.settings())}>
+              Choose a voice
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

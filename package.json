@@ -50,6 +50,7 @@
     "@noble/curves": "2.3.0",
     "@noble/hashes": "2.3.0",
     "@storybound/contracts": "0.1.0",
+    "@storybound/narration": "0.1.0",
     "@storybound/sync": "0.1.0",
     "@supabase/supabase-js": "2.112.2",
     "adm-zip": "^0.6.0",

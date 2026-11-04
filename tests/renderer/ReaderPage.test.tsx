@@ -246,17 +246,21 @@ describe('ReaderPage', () => {
     )
 
     await screen.findByRole('heading', { name: chapter.title })
-    await user.click(screen.getByRole('button', { name: 'Read aloud' }))
-    await user.click(screen.getByRole('button', { name: 'Read chapter' }))
-    expect(speak).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining(chapter.content) })
-    )
+    await user.click(screen.getByRole('button', { name: 'Listen' }))
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    // The chapter is read a passage at a time, starting with its title.
+    expect(speak).toHaveBeenCalledWith(expect.objectContaining({ text: chapter.title }))
+    const titleUtterance = speak.mock.calls[0][0] as Utterance
+    titleUtterance.onend?.()
+    await vi.waitFor(() => expect(speak).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    const firstWords = chapter.content.split('\n')[0].replace(/[*_#]/g, '').trim().slice(0, 20)
+    expect((speak.mock.calls[1][0] as Utterance).text).toContain(firstWords)
 
     await user.click(screen.getByRole('button', { name: 'Pause' }))
     expect(pause).toHaveBeenCalledOnce()
     await user.click(screen.getByRole('button', { name: 'Resume' }))
     expect(resume).toHaveBeenCalledOnce()
-    await user.click(screen.getByRole('button', { name: 'Stop reading aloud' }))
+    await user.click(screen.getByRole('button', { name: 'Stop listening' }))
     expect(cancel).toHaveBeenCalled()
     unmount()
   })

@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@storybound/contracts": "file:../../packages/contracts",
+    "@storybound/narration": "file:../../packages/narration",
     "@storybound/sync": "file:../../packages/sync",
     "@supabase/supabase-js": "2.112.2",
     "expo": "~58.0.22",

@@ -44,6 +44,12 @@ That request contains the current chapter, limited book title/blurb context, and
 
 Closing the assistant discards the API key from renderer state. Storybound does not retain the key for the next request. Network metadata may still be processed by the operating system, internet provider, and OpenAI as required to deliver the explicitly requested call; `store: false` is not a promise that no service-side security or legal processing can occur.
 
+## Optional Google voice for listening
+
+Listening uses the computer's or phone's own voice unless the user chooses the Google voice in **Settings → Listening**. That requires the user's own Google API key and an explicit agreement that chapter text is sent to Google. When the Google voice is in use, each passage being listened to is sent to Google's Gemini text-to-speech service with the chosen voice and reading style, directly from the device; nothing else from the library is sent. Google processes it under the terms of the user's own Google account. On Google's paid tier Google does not use it to improve its products; on the free tier it may, so Storybound recommends a key with billing set up.
+
+The API key is kept in the operating system's protected storage on desktop and in SecureStore on the phone. It is never stored in the library database, backups, exports, or sync, and is not sent anywhere except to Google with each request. Spoken audio is cached on the device so a passage heard again is not requested again; removing the key or clearing the app's data removes it.
+
 ## Optional AI assistant connections (Claude and the inbox folder)
 
 Both connections are off by default and are controlled in **Settings → AI assistants**.

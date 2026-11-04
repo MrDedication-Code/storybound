@@ -27,6 +27,8 @@ import { registerMediaProtocol } from './media-protocol'
 import { StoryboundStore } from './store'
 import { StoryboundSyncController } from './cloud/syncController'
 import { AgentBridgeController } from './agentBridge'
+import { ElectronCredentialProtector } from './cloud/electronProtector'
+import { NarrationController } from './narration/controller'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -402,6 +404,7 @@ async function start(): Promise<void> {
     store,
     sync: syncController,
     agentBridge,
+    narration: new NarrationController(store.paths.root, new ElectronCredentialProtector()),
     logger,
     getWindow: () => mainWindow
   })

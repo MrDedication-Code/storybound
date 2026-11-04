@@ -36,6 +36,7 @@ import type {
 } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
 import { AssistantSettings } from '../components/AssistantSettings'
+import { ListeningSettings } from '../components/ListeningSettings'
 import {
   Button,
   ConfirmDialog,
@@ -57,6 +58,7 @@ const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'reader-defaults', label: 'Reader' },
   { id: 'sync', label: 'Sync & devices' },
+  { id: 'listening', label: 'Listening' },
   { id: 'assistants', label: 'AI assistants' },
   { id: 'data', label: 'Data & recovery' },
   { id: 'about', label: 'About' }
@@ -907,6 +909,8 @@ export function SettingsPage({
               </InlineNotice>
             ) : null}
           </section>
+
+          <ListeningSettings notify={notify} />
 
           <AssistantSettings notify={notify} />
 

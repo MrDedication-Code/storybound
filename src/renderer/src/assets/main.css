@@ -2734,6 +2734,16 @@ kbd {
   box-shadow: 0 12px 35px rgba(0, 0, 0, 0.14);
   transform: translateX(-50%);
 }
+.reader-speech {
+  width: min(820px, calc(100vw - 32px));
+  flex-wrap: wrap;
+}
+.reader-speech .reader-speech-voice {
+  min-width: 0;
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
 .reader-speech label {
   display: flex;
   align-items: center;
@@ -4158,4 +4168,67 @@ kbd {
   .reader-tools .icon-button:first-child {
     display: none;
   }
+}
+
+.listening-voices {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.listening-voices legend {
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+.listening-key-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 12px 0;
+}
+.listening-key-form label {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.listening-key-saved {
+  align-self: center;
+  color: var(--success, #466c58);
+  font-weight: 600;
+}
+.listening-hint {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.listening-voice-list {
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.listening-voice-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.listening-voice-list li.is-current {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.listening-voice-list li > span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+.listening-voice-list small {
+  color: var(--muted);
 }
