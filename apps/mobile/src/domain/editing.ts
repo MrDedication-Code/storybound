@@ -24,6 +24,31 @@ export function insertText(edit: TextEdit, text: string): TextEdit {
  * Wraps the selection in Markdown emphasis, or removes it when the selection is already wrapped.
  * With nothing selected, the markers go in with the cursor between them, ready to type.
  */
+/** A performance note such as [[sigh]] at the cursor, spaced from the words either side. */
+export function insertPerformanceNote(edit: TextEdit, note: string): TextEdit {
+  const { start, end } = ordered(edit)
+  const before = start > 0 && !/\s/u.test(edit.value[start - 1]) ? ' ' : ''
+  const after = end < edit.value.length && !/[\s,.;:!?…]/u.test(edit.value[end]) ? ' ' : ''
+  return insertText(edit, `${before}[[${note}]]${after}`)
+}
+
+/**
+ * Starts the cursor's paragraph with a direction for how all of it is read, such as
+ * [[hushed, urgent]], replacing a direction already there.
+ */
+export function directParagraph(edit: TextEdit, direction: string): TextEdit {
+  const { start: cursor } = ordered(edit)
+  const { value } = edit
+  const breakBefore = value.lastIndexOf('\n\n', Math.max(0, cursor - 1))
+  let start = breakBefore < 0 ? 0 : breakBefore + 2
+  while (value[start] === '\n') start += 1
+  const existing = /^(?:\[\[[^[\]\n]{1,120}\]\]\s*)+/u.exec(value.slice(start))
+  const removed = existing?.[0].length ?? 0
+  const note = `[[${direction}]] `
+  const next = value.slice(0, start) + note + value.slice(start + removed)
+  return at(next, Math.max(start + note.length, cursor + note.length - removed))
+}
+
 export function toggleEmphasis(edit: TextEdit, marker: '**' | '*'): TextEdit {
   const { start, end } = ordered(edit)
   const { value } = edit

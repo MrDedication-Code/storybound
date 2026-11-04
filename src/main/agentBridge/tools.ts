@@ -54,6 +54,14 @@ export const MCP_SERVER_INSTRUCTIONS = [
   'edits are never overwritten) and add entries with create_bible_section.',
   'Chapter content is Markdown prose. Do not repeat the chapter',
   'title as a heading inside the content, and never include notes to the user in chapter text.',
+  'Chapters may carry performance notes for the voice that reads the book aloud, written in',
+  'double square brackets: at the very start of a paragraph a direction for how the whole',
+  'paragraph is read, such as [[hushed, urgent]] or [[warm and tender]]; anywhere else a sound',
+  'or beat at that moment, such as [[sigh]], [[laugh]], [[gasp]], [[whispers]], [[short pause]]',
+  'or [[long pause]]. They are heard when the chapter is read aloud and never shown in the',
+  'reader, exports or word counts. Keep the user’s notes when revising, add notes only when the',
+  'user asks for them, keep each under about ten words, and never use double square brackets',
+  'for anything else.',
   'Nothing can be deleted through these tools.'
 ].join(' ')
 

@@ -17,12 +17,15 @@ import { Notice } from '../components/Notice'
 import { QuillWheel } from '../components/radial/QuillWheel'
 import type { RadialItem } from '../components/radial/radialLayout'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
+import { ExpressionSheet } from '../components/ExpressionSheet'
 import { TextFieldSheet } from '../components/TextFieldSheet'
 import { ToolDrawer, type DrawerTool } from '../components/ToolDrawer'
 import { VersionsSheet } from '../components/VersionsSheet'
 import type { BookDetail, Chapter, MobilePreferences, MobileRepository } from '../domain/contracts'
 import {
+  directParagraph,
   EditHistory,
+  insertPerformanceNote,
   insertSceneBreak,
   insertText,
   replaceAllMatches,
@@ -38,7 +41,10 @@ import { useKeyboardOverlap } from '../hooks/useKeyboardOverlap'
 import { storyboundColors, storyboundRadii } from '../theme'
 
 type Selection = TextEdit['selection']
-type Sheet = { kind: 'versions' } | { kind: 'split'; offset: number; suggestion: string }
+type Sheet =
+  | { kind: 'versions' }
+  | { kind: 'split'; offset: number; suggestion: string }
+  | { kind: 'expression' }
 
 const FOOTER_HEIGHT = 54
 const AUTOSAVE_MS = 1200
@@ -272,6 +278,12 @@ export function EditorScreen({
   }
 
   const drawerTools: DrawerTool[] = [
+    {
+      key: 'expression',
+      glyph: '♪',
+      label: 'Expression',
+      detail: 'Notes for the voice that reads aloud'
+    },
     { key: 'find', glyph: '⌕', label: 'Find & replace' },
     { key: 'split', glyph: '✂', label: 'Split chapter here', detail: 'At the cursor' },
     { key: 'versions', glyph: '⟲', label: 'Earlier versions' },
@@ -333,6 +345,9 @@ export function EditorScreen({
         })
         return
       }
+      case 'expression':
+        setSheet({ kind: 'expression' })
+        return
       case 'versions':
         void settled().then((saved) => saved && setSheet({ kind: 'versions' }))
         return
@@ -506,6 +521,13 @@ export function EditorScreen({
             loadChapter(restored)
             setNotice({ text: 'Version restored. The text it replaced is kept in versions.' })
           }}
+        />
+      ) : null}
+      {sheet?.kind === 'expression' ? (
+        <ExpressionSheet
+          onClose={() => setSheet(null)}
+          onDirection={(direction) => applyEdit(directParagraph(current(), direction), 'tool')}
+          onSound={(note) => applyEdit(insertPerformanceNote(current(), note), 'tool')}
         />
       ) : null}
       {sheet?.kind === 'split' ? (

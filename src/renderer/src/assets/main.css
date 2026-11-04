@@ -4237,3 +4237,93 @@ kbd {
   height: 8px;
   accent-color: var(--accent);
 }
+
+/* Performance notes for the narrating voice, shown only in the editor's preview. */
+.performance-note {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  color: var(--accent-bright, var(--accent));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-family: var(--ui-font, system-ui, sans-serif);
+  font-size: 0.72em;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.7;
+  vertical-align: 0.1em;
+}
+
+.expression-menu {
+  position: relative;
+}
+.expression-menu > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.expression-menu > button:hover,
+.expression-menu > button[aria-expanded='true'] {
+  color: var(--accent-bright);
+  background: var(--surface);
+}
+.expression-menu__panel {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  gap: 8px;
+  width: 340px;
+  margin-top: 6px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised, var(--surface));
+  box-shadow: 0 14px 40px rgb(0 0 0 / 22%);
+}
+.expression-menu__panel strong {
+  font-size: 11px;
+}
+.expression-menu__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.expression-menu__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.expression-menu__chips button {
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 11px;
+}
+.expression-menu__chips button:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.expression-menu__custom {
+  display: flex;
+  gap: 6px;
+}
+.expression-menu__custom input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.expression-menu__custom button {
+  padding: 6px 12px;
+  font-size: 12px;
+}

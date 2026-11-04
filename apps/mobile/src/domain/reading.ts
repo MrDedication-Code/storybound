@@ -24,9 +24,14 @@ export function calculateReadingProgress(
   return Number((((safeIndex + safePosition) / chapterCount) * 100).toFixed(2))
 }
 
-/** Words as the desktop counts them, so both apps show the same totals. */
+/** Words as the desktop counts them, so both apps show the same totals. Performance notes
+ *  ([[sigh]]) direct the narrating voice and are not counted. */
 export function countWords(content: string): number {
-  return content.match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+  return (
+    content
+      .replace(/\[\[[^[\]\n]{1,120}\]\]/gu, ' ')
+      .match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+  )
 }
 
 export function estimateReadingMinutes(wordCount: number, wordsPerMinute = 230): number {

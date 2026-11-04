@@ -47,6 +47,9 @@ import { useListening } from '../narration/useListening'
 import { highlightColor, storyboundColors } from '../theme'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
+const PERFORMANCE_NOTE_SHOWN = /\[\[[^[\]\n]{1,120}\]\][ \t]?/gu
+const onlyNotes = (block: StoryBlock): boolean =>
+  block.kind !== 'divider' && !block.text.replace(PERFORMANCE_NOTE_SHOWN, '').trim()
 
 const readerPalettes: Record<
   ReaderTheme,
@@ -413,7 +416,8 @@ export function ReaderScreen({
 
   const renderText = (block: StoryBlock): React.ReactNode[] =>
     segmentBlock(block, placed).map((segment) => {
-      const text = segment.text.replace(/\r/g, '')
+      // Performance notes ([[sigh]]) are for the narrating voice, never shown to readers.
+      const text = segment.text.replace(/\r/g, '').replace(PERFORMANCE_NOTE_SHOWN, '')
       const annotation = segment.annotation
       if (!annotation) return text
       return (
@@ -549,7 +553,7 @@ export function ReaderScreen({
         >
           {blocks.length ? (
             blocks.map((block) =>
-              block.kind === 'divider' ? (
+              onlyNotes(block) ? null : block.kind === 'divider' ? (
                 <Text
                   key={`divider-${block.start}`}
                   style={[styles.divider, { color: palette.muted }]}

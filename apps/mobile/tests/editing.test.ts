@@ -95,3 +95,24 @@ describe('writing tools', () => {
     expect(history.canRedo).toBe(false)
   })
 })
+
+describe('performance notes', () => {
+  it('puts a note at the cursor with spaces where words would touch', async () => {
+    const { insertPerformanceNote } = await import('../src/domain/editing')
+    const result = insertPerformanceNote(
+      { value: 'She stopped.It hurt.', selection: { start: 12, end: 12 } },
+      'sigh'
+    )
+    expect(result.value).toBe('She stopped. [[sigh]] It hurt.')
+    expect(result.selection.start).toBe(22)
+  })
+
+  it('starts the paragraph with a direction, replacing the one there', async () => {
+    const { directParagraph } = await import('../src/domain/editing')
+    const value = 'First.\n\n[[calm]] Second line here.'
+    const once = directParagraph({ value, selection: { start: 30, end: 30 } }, 'hushed, urgent')
+    expect(once.value).toBe('First.\n\n[[hushed, urgent]] Second line here.')
+    const top = directParagraph({ value: 'Alone.', selection: { start: 3, end: 3 } }, 'grave')
+    expect(top.value).toBe('[[grave]] Alone.')
+  })
+})

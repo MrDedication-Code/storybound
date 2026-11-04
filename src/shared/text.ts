@@ -2,8 +2,12 @@ import type { SplitCandidate } from './types'
 
 const WORD_PATTERN = /[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu
 
+// Performance notes ([[sigh]], [[hushed, urgent]]) direct the narrating voice; they are not
+// part of the story's words.
+const PERFORMANCE_NOTE = /\[\[[^[\]\n]{1,120}\]\]/gu
+
 export function countWords(value: string): number {
-  return value.match(WORD_PATTERN)?.length ?? 0
+  return value.replace(PERFORMANCE_NOTE, ' ').match(WORD_PATTERN)?.length ?? 0
 }
 
 export function normalizeSearch(value: string): string {

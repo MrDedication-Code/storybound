@@ -1,10 +1,25 @@
 import { useEffect, useRef } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
+import { PERFORMANCE_NOTE, stripPerformanceNotes } from '@storybound/narration'
 
 const STORY_REMARK_PLUGINS = [remarkBreaks]
 
+// Marks a performance note turned into inline code, so it can be shown as a chip.
+const NOTE_MARK = '\u2063'
+
 const SAFE_COMPONENTS: Components = {
+  code: ({ children, className }) => {
+    const text = typeof children === 'string' ? children : ''
+    if (text.startsWith(NOTE_MARK)) {
+      return (
+        <span className="performance-note" title="Performance note for the narrating voice">
+          {text.slice(NOTE_MARK.length)}
+        </span>
+      )
+    }
+    return <code className={className}>{children}</code>
+  },
   a: ({ children, href }) => (
     <span
       className="story-link"
@@ -115,15 +130,27 @@ function findQuoteRanges(root: HTMLElement, quote: string): Range[] {
   return ranges
 }
 
+/**
+ * Story text as a reader sees it. Performance notes ([[sigh]]) are for the narrating voice and
+ * are hidden, unless `showNotes` is set, as in the editor's preview, where they show as chips.
+ */
 export function StoryMarkdown({
-  children,
+  children: source,
   highlight = '',
-  highlights = EMPTY_HIGHLIGHTS
+  highlights = EMPTY_HIGHLIGHTS,
+  showNotes = false
 }: {
   children: string
   highlight?: string
   highlights?: readonly StoryHighlight[]
+  showNotes?: boolean
 }): React.JSX.Element {
+  const children = showNotes
+    ? source.replace(
+        PERFORMANCE_NOTE,
+        (_note, text: string) => `\`${NOTE_MARK}${text.replace(/`/g, "'").trim()}\``
+      )
+    : stripPerformanceNotes(source)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

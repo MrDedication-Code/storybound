@@ -1,4 +1,5 @@
 import AdmZip from 'adm-zip'
+import { stripPerformanceNotes } from '@storybound/narration'
 import type { BookDetail, Chapter } from '../shared/types'
 
 export const EPUB_MEDIA_TYPE = 'application/epub+zip'
@@ -82,7 +83,11 @@ function requireCompleteChapters(input: StandardExportInput): PreparedExport {
 
   return {
     book: input.book,
-    chapters: expectedIds.map((id) => chapterById.get(id) as Chapter)
+    // Performance notes are for the narrating voice; published books never show them.
+    chapters: expectedIds.map((id) => {
+      const chapter = chapterById.get(id) as Chapter
+      return { ...chapter, content: stripPerformanceNotes(chapter.content) }
+    })
   }
 }
 

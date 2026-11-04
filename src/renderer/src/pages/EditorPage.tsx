@@ -63,6 +63,7 @@ import {
   LoadingState,
   Modal
 } from '../components/ui'
+import { ExpressionMenu } from '../components/ExpressionMenu'
 import { StoryMarkdown } from '../components/StoryMarkdown'
 import { WritingGoalsModal } from '../components/WritingGoalsModal'
 import { AiAssistantModal } from '../components/AiAssistantModal'
@@ -516,6 +517,46 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
     window.setTimeout(() => {
       area.focus()
       area.setSelectionRange(start + before.length, start + before.length + selected.length)
+    }, 0)
+  }
+
+  /** Inserts text at the cursor, with a space either side where words would otherwise touch. */
+  const insertAtCursor = (text: string): void => {
+    const area = textareaRef.current
+    if (!area) return
+    const start = area.selectionStart
+    const end = area.selectionEnd
+    const before = start > 0 && !/\s/.test(content[start - 1]) ? ' ' : ''
+    const after = end < content.length && !/[\s,.;:!?…]/.test(content[end]) ? ' ' : ''
+    const inserted = `${before}${text}${after}`
+    setContent(`${content.slice(0, start)}${inserted}${content.slice(end)}`)
+    markDirty()
+    window.setTimeout(() => {
+      area.focus()
+      area.setSelectionRange(start + inserted.length, start + inserted.length)
+    }, 0)
+  }
+
+  /** Starts the cursor's paragraph with a direction, replacing one already there. */
+  const directParagraph = (direction: string): void => {
+    const area = textareaRef.current
+    if (!area) return
+    const cursor = area.selectionStart
+    const breakBefore = content.lastIndexOf('\n\n', Math.max(0, cursor - 1))
+    let start = breakBefore < 0 ? 0 : breakBefore + 2
+    while (content[start] === '\n') start += 1
+    const existing = /^(?:\[\[[^[\]\n]{1,120}\]\]\s*)+/.exec(content.slice(start))
+    const note = `[[${direction}]] `
+    const removed = existing?.[0].length ?? 0
+    setContent(`${content.slice(0, start)}${note}${content.slice(start + removed)}`)
+    markDirty()
+    const moved = cursor + note.length - removed
+    window.setTimeout(() => {
+      area.focus()
+      area.setSelectionRange(
+        Math.max(start + note.length, moved),
+        Math.max(start + note.length, moved)
+      )
     }, 0)
   }
 
@@ -1075,6 +1116,10 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
               <IconButton icon={Bold} label="Bold" onClick={() => applyMarkdown('**')} />
               <IconButton icon={Italic} label="Italic" onClick={() => applyMarkdown('_')} />
               <button onClick={() => applyMarkdown('\n\n* * *\n\n', '', '')}>Scene break</button>
+              <ExpressionMenu
+                onDirection={directParagraph}
+                onSound={(note) => insertAtCursor(`[[${note}]]`)}
+              />
               <span className="toolbar-divider" />
               <button onClick={openManualSplit}>
                 <Split size={16} />
@@ -1138,7 +1183,7 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
             {editorView !== 'edit' ? (
               <article className="markdown-preview reader-prose">
                 {content.trim() ? (
-                  <StoryMarkdown>{content}</StoryMarkdown>
+                  <StoryMarkdown showNotes>{content}</StoryMarkdown>
                 ) : (
                   <p className="preview-empty">Your formatted chapter preview will appear here.</p>
                 )}

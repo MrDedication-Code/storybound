@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { stripPerformanceNotes } from '@storybound/narration'
 
 export interface CompanionExportChapter {
   id: string
@@ -487,7 +488,7 @@ function prepareBook(input: CompanionExportBook): PreparedCompanionBook {
     return {
       id,
       title: normalizeText(chapter.title, `Chapter ${index + 1} title`),
-      content: normalizeText(chapter.content, `Chapter ${index + 1} content`)
+      content: stripPerformanceNotes(normalizeText(chapter.content, `Chapter ${index + 1} content`))
     }
   })
 

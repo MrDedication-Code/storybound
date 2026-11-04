@@ -215,3 +215,23 @@ describe('standard book exports', () => {
     expect(entryText(zip, 'EPUB/text/chapter-002.xhtml')).toContain('Beforeafter')
   })
 })
+
+describe('performance notes in exports', () => {
+  it('leaves the narrating voice’s notes out of published books', () => {
+    const base = fixture()
+    const input: StandardExportInput = {
+      ...base,
+      chapters: [
+        {
+          ...base.chapters[0],
+          content: '[[hushed, urgent]] Run. [[gasp]] Now.\n\n[[long pause]]\n\nGone.'
+        },
+        ...base.chapters.slice(1)
+      ]
+    }
+    const markdown = buildBookMarkdown(input)
+    expect(markdown).not.toContain('[[')
+    expect(markdown).toContain('Run. Now.')
+    expect(buildBookPrintHtml(input)).not.toContain('[[')
+  })
+})
