@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.storybound.kokoro'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.storyboundkokoro"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  // Runs the Kokoro voice model on the phone's processor.
+  implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.31.1'
+}

@@ -41,7 +41,7 @@ import {
   type StoryBlock
 } from '../domain/reading'
 import { listeningSession } from '../narration'
-import { createGoogleVoice, ListeningSetupNeeded } from '../narration/googleVoice'
+import { createListeningVoice, ListeningSetupNeeded } from '../narration/googleVoice'
 import { saveNarrationSettings } from '../narration/narrationSettings'
 import { useListening } from '../narration/useListening'
 import { highlightColor, storyboundColors } from '../theme'
@@ -362,7 +362,7 @@ export function ReaderScreen({
     setStartingListen(true)
     setError('')
     try {
-      const { voice, settings } = await createGoogleVoice()
+      const { voice, settings } = await createListeningVoice()
       await listeningSession().start({
         repository,
         voice,

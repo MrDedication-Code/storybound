@@ -15,12 +15,22 @@ export async function cachedAudio(
   identity: unknown[],
   produce: () => Promise<Uint8Array>
 ): Promise<string> {
+  return cachedAudioFile(identity, async (file) => {
+    const audio = await produce()
+    if (!file.exists) file.create({ overwrite: true })
+    await file.write(audio)
+  })
+}
+
+/** Like cachedAudio, for audio written straight to the file (the free voice writes it natively). */
+export async function cachedAudioFile(
+  identity: unknown[],
+  write: (file: File) => Promise<void>
+): Promise<string> {
   const name = `${await digestStringAsync(CryptoDigestAlgorithm.SHA256, JSON.stringify(identity))}.wav`
   const file = new File(folder(), name)
   if (file.exists && (file.size ?? 0) > 44) return file.uri
-  const audio = await produce()
-  if (!file.exists) file.create({ overwrite: true })
-  await file.write(audio)
+  await write(file)
   return file.uri
 }
 

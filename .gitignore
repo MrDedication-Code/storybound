@@ -12,3 +12,7 @@ test-results
 .env.local
 apps/mobile/.expo
 supabase/.temp
+
+# Gradle output of the local native modules
+apps/mobile/modules/*/android/build/
+apps/mobile/modules/*/android/.cxx/

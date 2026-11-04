@@ -1,8 +1,16 @@
 import * as SecureStore from 'expo-secure-store'
-import { GEMINI_DEFAULT_STYLE, GEMINI_DEFAULT_VOICE } from '@storybound/narration'
+import {
+  GEMINI_DEFAULT_STYLE,
+  GEMINI_DEFAULT_VOICE,
+  KOKORO_DEFAULT_VOICE,
+  KOKORO_VOICES
+} from '@storybound/narration'
 
 /** Listening preferences for this phone; the Google API key is kept separately below. */
 export interface NarrationSettings {
+  /** Google's voice (with the writer's key) or the free voice that runs on the phone. */
+  engine: 'gemini' | 'kokoro'
+  kokoroVoiceId: string
   geminiVoiceId: string
   geminiVoiceName: string
   geminiStyle: string
@@ -12,6 +20,8 @@ export interface NarrationSettings {
 }
 
 export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
+  engine: 'gemini',
+  kokoroVoiceId: KOKORO_DEFAULT_VOICE,
   geminiVoiceId: GEMINI_DEFAULT_VOICE,
   geminiVoiceName: GEMINI_DEFAULT_VOICE,
   geminiStyle: GEMINI_DEFAULT_STYLE,
@@ -34,6 +44,10 @@ export async function loadNarrationSettings(): Promise<NarrationSettings> {
     const text = (input: unknown, fallback: string, maximum: number): string =>
       typeof input === 'string' && input.trim() ? input.trim().slice(0, maximum) : fallback
     return {
+      engine: value.engine === 'kokoro' ? 'kokoro' : 'gemini',
+      kokoroVoiceId: KOKORO_VOICES.some((voice) => voice.id === value.kokoroVoiceId)
+        ? (value.kokoroVoiceId as string)
+        : KOKORO_DEFAULT_VOICE,
       geminiVoiceId: text(value.geminiVoiceId, GEMINI_DEFAULT_VOICE, 200),
       geminiVoiceName: text(value.geminiVoiceName, GEMINI_DEFAULT_VOICE, 200),
       geminiStyle:

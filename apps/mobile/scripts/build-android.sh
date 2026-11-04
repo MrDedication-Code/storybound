@@ -19,7 +19,10 @@ VERSION="$(node -p "require('./app.json').expo.version")"
 
 # The native project is generated from app.json each time and is not kept in git.
 npx expo prebuild --platform android --clean --no-install
-(cd android && ./gradlew assembleRelease --no-daemon)
+# Phones from the last several years, the Galaxy S25 Ultra included, and the Mac's Android
+# emulator all run 64-bit ARM; building only for it keeps the APK a fraction of the size.
+ARCHITECTURES="${STORYBOUND_ANDROID_ARCHITECTURES:-arm64-v8a}"
+(cd android && ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures="$ARCHITECTURES")
 
 mkdir -p dist
 OUTPUT="dist/storybound-$VERSION.apk"

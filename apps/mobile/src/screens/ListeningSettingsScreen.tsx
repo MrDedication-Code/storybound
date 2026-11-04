@@ -1,4 +1,4 @@
-import { GEMINI_DEFAULT_STYLE, type GeminiVoice } from '@storybound/narration'
+import { GEMINI_DEFAULT_STYLE, KOKORO_VOICES, type GeminiVoice } from '@storybound/narration'
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -16,6 +16,14 @@ import { AppHeader } from '../components/AppHeader'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { checkGeminiKey, searchGeminiVoices, speakWithGoogle } from '../narration/googleVoice'
 import { listeningSession } from '../narration'
+import {
+  installKokoro,
+  kokoroAvailable,
+  kokoroInstalled,
+  KOKORO_DOWNLOAD_BYTES,
+  removeKokoro,
+  speakWithKokoro
+} from '../narration/kokoroVoice'
 import {
   loadGeminiKey,
   loadNarrationSettings,
@@ -39,12 +47,17 @@ export function ListeningSettingsScreen({ onBack }: { onBack: () => void }): Rea
   const [search, setSearch] = useState('')
   const [voices, setVoices] = useState<GeminiVoice[] | null>(null)
   const [busy, setBusy] = useState('')
+  const [freeVoiceReady, setFreeVoiceReady] = useState(false)
+  const [downloaded, setDownloaded] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const previewRef = useRef<AudioPlayer | null>(null)
 
   useEffect(() => {
     let active = true
+    void kokoroInstalled().then((installed) => {
+      if (active) setFreeVoiceReady(installed)
+    })
     void Promise.all([loadNarrationSettings(), loadGeminiKey()]).then(([loaded, key]) => {
       if (!active) return
       setSettings(loaded)
@@ -92,6 +105,28 @@ export function ListeningSettingsScreen({ onBack }: { onBack: () => void }): Rea
   }
 
   const ready = hasKey && settings.geminiConsent
+  const megabytes = (bytes: number): string => `${Math.round(bytes / 1_000_000)} MB`
+  const playPreview = (uri: string): void => {
+    previewRef.current?.remove()
+    const player = createAudioPlayer({ uri })
+    previewRef.current = player
+    player.play()
+  }
+  const kokoroName = KOKORO_VOICES.find((voice) => voice.id === settings.kokoroVoiceId)?.name
+  const chooseEngine = (engine: 'gemini' | 'kokoro'): void =>
+    void run('engine', async () => {
+      if (engine === 'kokoro' && !freeVoiceReady) throw new Error('Download the free voice first.')
+      if (engine === 'gemini' && !ready) {
+        throw new Error('Add your Google API key and agree to send text to Google first.')
+      }
+      listeningSession().stop()
+      await change(
+        { engine },
+        engine === 'kokoro'
+          ? 'Books are now read in the free voice.'
+          : "Books are now read in Google's voice."
+      )
+    })
 
   return (
     <View style={styles.screen}>
@@ -99,13 +134,174 @@ export function ListeningSettingsScreen({ onBack }: { onBack: () => void }): Rea
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Listen to your books</Text>
         <Text style={styles.intro}>
-          Storybound reads chapters aloud in Google&apos;s natural voice. It keeps going with the
-          screen off, works with headphone and lock-screen controls, and saves your place as it
-          reads.
+          Storybound reads chapters aloud, in Google&apos;s natural voice or a free voice that runs
+          on this phone. It keeps going with the screen off, works with headphone and lock-screen
+          controls, and saves your place as it reads.
         </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+
+        <View accessibilityRole="radiogroup" style={styles.card}>
+          <Text style={styles.cardTitle}>Voice</Text>
+          {(
+            [
+              {
+                engine: 'gemini',
+                title: `Google voice · ${settings.geminiVoiceName}`,
+                copy: ready
+                  ? 'Natural and expressive, with performance notes. Paid with your own key.'
+                  : 'Add your Google API key below to use it.'
+              },
+              {
+                engine: 'kokoro',
+                title: `Free voice · ${kokoroName ?? 'George'}`,
+                copy: freeVoiceReady
+                  ? 'Kokoro, a natural voice that runs on this phone. Free, offline, and private.'
+                  : 'Download it below to use it.'
+              }
+            ] as const
+          ).map((option) => {
+            const chosen = settings.engine === option.engine
+            return (
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: chosen }}
+                disabled={Boolean(busy)}
+                key={option.engine}
+                style={({ pressed }) => [
+                  styles.choice,
+                  chosen && styles.choiceChosen,
+                  pressed && styles.pressed
+                ]}
+                onPress={() => chooseEngine(option.engine)}
+              >
+                <View style={[styles.radio, chosen && styles.radioChosen]} />
+                <View style={styles.grow}>
+                  <Text style={styles.switchTitle}>{option.title}</Text>
+                  <Text style={styles.small}>{option.copy}</Text>
+                </View>
+              </Pressable>
+            )
+          })}
+        </View>
+
+        {kokoroAvailable() ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Free voice</Text>
+            <Text style={styles.copy}>
+              Kokoro is an open voice model that reads on this phone, with no account, no cost, and
+              nothing sent anywhere. It is downloaded once ({megabytes(KOKORO_DOWNLOAD_BYTES)}, best
+              on Wi-Fi) and checked before use. It reads the words plainly; performance notes are
+              for the Google voice.
+            </Text>
+            {freeVoiceReady ? (
+              <>
+                {KOKORO_VOICES.map((voice) => {
+                  const chosen = voice.id === settings.kokoroVoiceId
+                  return (
+                    <View key={voice.id} style={[styles.voice, chosen && styles.voiceChosen]}>
+                      <View style={styles.grow}>
+                        <Text style={styles.voiceName}>{voice.name}</Text>
+                        <Text style={styles.small}>{voice.description}</Text>
+                      </View>
+                      <View style={styles.voiceActions}>
+                        <Pressable
+                          accessibilityLabel={`Preview ${voice.name}`}
+                          accessibilityRole="button"
+                          disabled={Boolean(busy)}
+                          hitSlop={8}
+                          style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
+                          onPress={() =>
+                            void run(`preview-${voice.id}`, async () => {
+                              playPreview(await speakWithKokoro(PREVIEW_TEXT, voice.id))
+                            })
+                          }
+                        >
+                          <Text style={styles.chipLabel}>
+                            {busy === `preview-${voice.id}` ? '…' : 'Preview'}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel={`Use ${voice.name}`}
+                          accessibilityRole="button"
+                          disabled={Boolean(busy) || chosen}
+                          hitSlop={8}
+                          style={({ pressed }) => [
+                            styles.chip,
+                            styles.chipPrimary,
+                            chosen && styles.chipChosen,
+                            pressed && styles.pressed
+                          ]}
+                          onPress={() =>
+                            void run('voice', async () => {
+                              listeningSession().stop()
+                              await change(
+                                { kokoroVoiceId: voice.id, engine: 'kokoro' },
+                                `Books will be read by ${voice.name}.`
+                              )
+                            })
+                          }
+                        >
+                          <Text style={[styles.chipLabel, styles.chipPrimaryLabel]}>
+                            {chosen ? 'Chosen' : 'Use'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )
+                })}
+                <PrimaryButton
+                  disabled={Boolean(busy)}
+                  label="Remove download"
+                  variant="quiet"
+                  onPress={() =>
+                    void run('remove-kokoro', async () => {
+                      listeningSession().stop()
+                      removeKokoro()
+                      setFreeVoiceReady(false)
+                      if (settings.engine === 'kokoro') await change({ engine: 'gemini' })
+                      setNotice('The free voice was removed.')
+                    })
+                  }
+                />
+              </>
+            ) : (
+              <>
+                {downloaded !== null ? (
+                  <View style={styles.progressTrack}>
+                    <View
+                      style={[
+                        styles.progressValue,
+                        { width: `${Math.min(100, (downloaded / KOKORO_DOWNLOAD_BYTES) * 100)}%` }
+                      ]}
+                    />
+                  </View>
+                ) : null}
+                <PrimaryButton
+                  disabled={Boolean(busy)}
+                  label={
+                    downloaded !== null
+                      ? `Downloading… ${megabytes(downloaded)} of ${megabytes(KOKORO_DOWNLOAD_BYTES)}`
+                      : 'Download the free voice'
+                  }
+                  onPress={() =>
+                    void run('kokoro', async () => {
+                      setDownloaded(0)
+                      try {
+                        await installKokoro((received) => setDownloaded(received))
+                      } finally {
+                        setDownloaded(null)
+                      }
+                      setFreeVoiceReady(true)
+                      await change({ engine: 'kokoro' }, 'The free voice is ready.')
+                    })
+                  }
+                />
+              </>
+            )}
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Google API key</Text>
@@ -259,10 +455,7 @@ export function ListeningSettingsScreen({ onBack }: { onBack: () => void }): Rea
                                   style: settings.geminiStyle,
                                   voice: voice.id
                                 })
-                                previewRef.current?.remove()
-                                const player = createAudioPlayer({ uri })
-                                previewRef.current = player
-                                player.play()
+                                playPreview(uri)
                               })
                             }
                           >
@@ -511,6 +704,40 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6
+  },
+  choice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderColor: storyboundColors.line,
+    borderRadius: storyboundRadii.small,
+    borderWidth: 1
+  },
+  choiceChosen: {
+    borderColor: storyboundColors.brass,
+    borderWidth: 2
+  },
+  radio: {
+    width: 20,
+    height: 20,
+    borderColor: storyboundColors.muted,
+    borderRadius: 10,
+    borderWidth: 2
+  },
+  radioChosen: {
+    borderColor: storyboundColors.brass,
+    borderWidth: 6
+  },
+  progressTrack: {
+    height: 6,
+    overflow: 'hidden',
+    borderRadius: 3,
+    backgroundColor: storyboundColors.line
+  },
+  progressValue: {
+    height: '100%',
+    backgroundColor: storyboundColors.brass
   },
   privacy: {
     gap: 6,
