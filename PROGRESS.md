@@ -34,7 +34,7 @@ Run the commands again after any later source or dependency change; generated ar
 ## Release limitations
 
 - Local artifacts are unsigned and unnotarised.
-- The packaged smoke audit covered Apple Silicon macOS. Build and test Windows, Linux, and Intel macOS on their target systems before distribution.
+- The packaged smoke audit covered Apple Silicon macOS. Windows is built, installed and run on a real Windows machine by `.github/workflows/windows.yml` on each desktop change, including the free voice; it has not yet been tried by hand, and the installer is unsigned. Build and test Linux and Intel macOS on their target systems before distribution.
 - Optional OpenAI use depends on the user's API account and external service availability. All core library, editor, reader, organisation, export, and backup workflows remain local.
 - Encrypted sync is optional and single-user; it does not provide collaborative editing. A hosted Supabase project still needs to be provisioned and the public endpoint/key injected into release builds.
 
