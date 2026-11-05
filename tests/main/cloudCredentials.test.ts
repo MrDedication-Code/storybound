@@ -68,7 +68,8 @@ describe('secure cloud credential storage', () => {
     expect(await storage.getItem('auth.session')).toBe('first-secret')
     expect(await storage.getItem('sync.device')).toBe('second-secret')
     expect((await readFile(path, 'utf8')).includes('first-secret')).toBe(false)
-    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    // Windows has no owner-only mode bits; there the file relies on its encryption.
+    if (process.platform !== 'win32') expect((await stat(path)).mode & 0o777).toBe(0o600)
 
     await storage.removeItem('auth.session')
     expect(await storage.getItem('auth.session')).toBeNull()

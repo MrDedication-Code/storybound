@@ -16,6 +16,8 @@ import { _electron as electron } from '@playwright/test'
 const SENTENCE = 'Storybound is reading this sentence aloud.'
 /** Far smaller than a real sentence of audio, so an empty or broken file cannot pass. */
 const SMALLEST_AUDIO_BYTES = 20_000
+/** Files that finished are kept between tries, so a dropped connection only costs the one file. */
+const DOWNLOAD_TRIES = 4
 
 function step(message) {
   console.log(`\n▶ ${message}`)
@@ -24,6 +26,15 @@ function step(message) {
 function unwrap(result, doing) {
   if (!result.ok) throw new Error(`${doing} failed: ${JSON.stringify(result.error)}`)
   return result.data
+}
+
+async function downloadVoice(page) {
+  for (let attempt = 1; ; attempt += 1) {
+    const result = await page.evaluate(() => window.api.narration.installKokoro())
+    if (result.ok) return
+    if (attempt === DOWNLOAD_TRIES) unwrap(result, 'Downloading the voice')
+    console.log(`Try ${attempt} failed (${JSON.stringify(result.error)}), trying again`)
+  }
 }
 
 async function check(executablePath) {
@@ -67,7 +78,7 @@ async function check(executablePath) {
     if (saved.title !== 'Packaged app check') throw new Error('The book did not save.')
 
     step('Downloading the free voice')
-    unwrap(await page.evaluate(() => window.api.narration.installKokoro()), 'Installing the voice')
+    await downloadVoice(page)
 
     step('Reading a sentence aloud with the free voice')
     const audio = unwrap(

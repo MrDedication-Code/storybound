@@ -11,6 +11,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    // Shared build machines have far slower disks, and the database tests wait on them.
+    testTimeout: process.env.CI ? 30_000 : 5_000,
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
     coverage: {
