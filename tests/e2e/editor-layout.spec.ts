@@ -43,7 +43,8 @@ async function resizeWindow(
   height: number
 ): Promise<void> {
   await running.app.evaluate(
-    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(size.width, size.height),
+    ({ BrowserWindow }, size) =>
+      BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height),
     { height, width }
   )
   await expect.poll(() => running.page.evaluate(() => window.innerWidth)).toBe(width)
