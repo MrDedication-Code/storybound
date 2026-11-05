@@ -73,3 +73,4 @@
 - Ignore Supabase CLI's generated `supabase/.temp` catalogs in both Git and repository-wide format checks; migration diff/audit commands can create them even when the main local stack lives in a separate temporary directory.
 - In a concurrent compare-and-swap E2E, derive the idempotency retry from whichever writer was actually accepted; assuming a fixed winner turns a valid conflict response into a nondeterministic false failure.
 - Privilege-revoked tables hide their columns from `information_schema.columns` for the authenticated test role; use `pg_catalog.pg_attribute` when the assertion is specifically about schema existence rather than caller-visible metadata.
+- In electron-builder `files` rules, `${platform}` is the computer doing the build, not the target; a Windows build made on a Mac keeps the Mac binaries. Exclude per target in `electron-builder.cjs`, and check the built output, since the build itself succeeds either way.
