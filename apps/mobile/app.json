@@ -3,7 +3,7 @@
     "name": "Storybound",
     "slug": "storybound-mobile",
     "scheme": "storybound",
-    "version": "0.4.2",
+    "version": "0.4.3",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -50,7 +50,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": true,
-      "versionCode": 4
+      "versionCode": 5
     },
     "web": {
       "favicon": "./assets/favicon.png"

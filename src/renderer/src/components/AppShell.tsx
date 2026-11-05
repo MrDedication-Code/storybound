@@ -10,6 +10,7 @@ import {
   X
 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { isMac } from '../lib/platform'
 import { navigate, routes } from '../lib/routing'
 import { Button, IconButton, VisuallyHidden } from './ui'
 
@@ -160,7 +161,7 @@ export function AppShell({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <kbd>⌘ K</kbd>
+            <kbd>{isMac ? '⌘ K' : 'Ctrl K'}</kbd>
           </form>
           <Button icon={Plus} onClick={onAddBook} variant="primary">
             Add book

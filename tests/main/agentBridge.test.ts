@@ -26,6 +26,7 @@ import {
 } from '../../src/main/agentBridge/mcpServer'
 import { locateAnchor } from '../../src/main/agentBridge/annotationAnchors'
 import { AGENT_TOOLS, normalizeChapterContent } from '../../src/main/agentBridge/tools'
+import { WRITING_GUIDE } from '../../src/shared/writingGuide'
 import { StoryboundStore } from '../../src/main/store'
 
 const temporaryDirectories: string[] = []
@@ -58,6 +59,18 @@ afterEach(async () => {
 })
 
 describe('agent tools', () => {
+  it('tells Claude how to write, even when the connection’s instructions do not reach it', async () => {
+    const store = await createStore()
+    const guide = AGENT_TOOLS.find((tool) => tool.name === 'get_writing_guide')!
+
+    expect(guide.run(store, {}).text).toBe(WRITING_GUIDE)
+    for (const name of ['add_chapter', 'update_chapter']) {
+      const tool = AGENT_TOOLS.find((candidate) => candidate.name === name)!
+      expect(tool.description).toContain('[[hushed, urgent]]')
+      expect(tool.description).toContain('[[sigh]]')
+    }
+  })
+
   it('creates a book, appends chapters in order, and ignores a retried duplicate', async () => {
     const store = await createStore()
     const created = callTool(store, 'create_book', {

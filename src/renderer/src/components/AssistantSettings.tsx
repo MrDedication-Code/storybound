@@ -161,13 +161,14 @@ export function AssistantSettings({ notify }: AssistantSettingsProps): React.JSX
           <ol>
             <li>Turn on “Allow Claude to add to my library”.</li>
             <li>
-              <strong>Claude Desktop:</strong> click “Add to Claude Desktop”, then quit and reopen
-              Claude Desktop. <strong>Claude Code:</strong> click “Copy Claude Code command”, paste
-              it into Terminal and press Return once.
+              <strong>Claude Desktop:</strong> click “Add to Claude Desktop”, then fully quit and
+              reopen Claude Desktop. <strong>Claude Code:</strong> click “Copy Claude Code command”,
+              paste it into a terminal and press Enter once.
             </li>
             <li>
-              Start a new Claude chat and ask it to write with you. Claude checks your library,
-              creates the book, and adds each chapter in order once you approve it.
+              Open Getting started → Write with Claude, copy the prompt, and paste it into a new
+              Claude chat. Claude asks what you want, plans the book with you, and saves each
+              chapter here.
             </li>
           </ol>
           <h4>Things to ask Claude</h4>

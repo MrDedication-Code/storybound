@@ -36,8 +36,12 @@ jobs:
       - name: Run the tests
         run: npm test
 
+      # Public settings, kept as repository variables because .env.local is not in the repository.
       - name: Build
         run: npm run build
+        env:
+          STORYBOUND_SUPABASE_URL: ${{ vars.STORYBOUND_SUPABASE_URL }}
+          STORYBOUND_SUPABASE_PUBLISHABLE_KEY: ${{ vars.STORYBOUND_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Run the app through its end-to-end tests
         run: npx playwright test
@@ -54,7 +58,7 @@ jobs:
           Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$target" -Wait
           "STORYBOUND_INSTALLED=$target\Storybound.exe" >> $env:GITHUB_ENV
 
-      - name: Open the installed app, save a book and read a sentence aloud
+      - name: Open the installed app, then check books, sync, Claude and the free voice
         timeout-minutes: 20
         run: node scripts/check-packaged-app.mjs "$env:STORYBOUND_INSTALLED"
 

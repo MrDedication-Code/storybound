@@ -14,6 +14,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { syncCredentialsSchema, syncRecoveryCodeSchema } from '@storybound/contracts'
 import type { ApiResult, OperationResult } from '../shared/types'
+import { WRITING_GUIDE } from '../shared/writingGuide'
 import {
   createAnnotationSchema,
   aiAssistantSchema,
@@ -342,14 +343,21 @@ export function registerStoryboundIpc({
   handle(IPC_CHANNELS.agentBridgeScanInbox, noInput, () => agentBridge.scanInboxNow())
   handle(
     IPC_CHANNELS.agentBridgeCopy,
-    z.enum(['claude-code-command', 'claude-desktop-config', 'http-token', 'inbox-instructions']),
+    z.enum([
+      'claude-code-command',
+      'claude-desktop-config',
+      'http-token',
+      'inbox-instructions',
+      'writing-guide'
+    ]),
     (kind) => {
       const status = agentBridge.status()
       const text = {
         'claude-code-command': status.claudeCodeCommand,
         'claude-desktop-config': status.claudeDesktopConfig,
         'http-token': agentBridge.accessToken,
-        'inbox-instructions': INBOX_INSTRUCTIONS
+        'inbox-instructions': INBOX_INSTRUCTIONS,
+        'writing-guide': WRITING_GUIDE
       }[kind]
       clipboard.writeText(text)
       return {
@@ -357,7 +365,8 @@ export function registerStoryboundIpc({
           'claude-code-command': 'Copied the Claude Code command.',
           'claude-desktop-config': 'Copied the Claude Desktop configuration.',
           'http-token': 'Copied the access token. Keep it private.',
-          'inbox-instructions': 'Copied the inbox instructions. Paste them into your AI chat.'
+          'inbox-instructions': 'Copied the inbox instructions. Paste them into your AI chat.',
+          'writing-guide': 'Copied the prompt. Paste it into a new Claude chat.'
         }[kind]
       }
     }

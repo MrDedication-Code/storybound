@@ -746,7 +746,11 @@ export interface UpdateAgentBridgeInput {
 }
 
 export type AgentBridgeCopyKind =
-  'claude-code-command' | 'claude-desktop-config' | 'http-token' | 'inbox-instructions'
+  | 'claude-code-command'
+  | 'claude-desktop-config'
+  | 'http-token'
+  | 'inbox-instructions'
+  | 'writing-guide'
 
 export interface InboxScanResult {
   imported: number

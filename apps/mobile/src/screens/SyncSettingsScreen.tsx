@@ -124,7 +124,7 @@ export function SyncSettingsScreen({
         <Text style={styles.title}>Encrypted device sync</Text>
         <Text style={styles.intro}>
           Your library is encrypted on this device before it is uploaded. Link this phone by
-          approving it from your Mac, or unlock it with your recovery code.
+          approving it from your computer, or unlock it with your recovery code.
         </Text>
 
         <StatusCard status={status} />
@@ -185,7 +185,7 @@ export function SyncSettingsScreen({
           </View>
         ) : !unlocked ? (
           <View style={styles.section}>
-            <Text style={compactCaps}>Link to your Mac</Text>
+            <Text style={compactCaps}>Link to your computer</Text>
             <LinkPanel
               busy={busy}
               link={link}
@@ -305,10 +305,10 @@ export function SyncSettingsScreen({
         <View style={styles.privacyCard}>
           <Text style={styles.noticeTitle}>Your key never reaches the server readable</Text>
           <Text style={styles.noticeCopy}>
-            When you link by approval, your Mac seals the library key so only this phone can open
-            it, and the six words prove nothing swapped in between. The server stores only sealed
-            envelopes, never your readable key or stories. Signing out never removes the local
-            library.
+            When you link by approval, your computer seals the library key so only this phone can
+            open it, and the six words prove nothing swapped in between. The server stores only
+            sealed envelopes, never your readable key or stories. Signing out never removes the
+            local library.
           </Text>
         </View>
         <PrimaryButton label="Return to library" onPress={onHome} />
@@ -371,10 +371,10 @@ function LinkPanel({
   if (link?.phase === 'waiting') {
     return (
       <View style={styles.linkCard}>
-        <Text style={styles.linkTitle}>Waiting for your Mac…</Text>
+        <Text style={styles.linkTitle}>Waiting for your computer…</Text>
         <Text style={styles.sectionCopy}>
-          On your Mac, open Storybound, then Settings → Sync & devices. A request from this phone
-          will appear there with six words.
+          On your computer, open Storybound, then Settings → Sync & devices. A request from this
+          phone will appear there with six words.
         </Text>
         <ActivityIndicator color={storyboundColors.brass} style={styles.spinner} />
         <PrimaryButton disabled={busy} label="Cancel" variant="quiet" onPress={onCancel} />
@@ -385,7 +385,7 @@ function LinkPanel({
     return (
       <View style={styles.linkCard}>
         <Text style={styles.linkTitle}>
-          {link.confirmed ? 'Now approve on your Mac' : 'Do these words match your Mac?'}
+          {link.confirmed ? 'Now approve on your computer' : 'Do these words match your computer?'}
         </Text>
         <View accessibilityLabel={`Words: ${link.words.join(', ')}`} style={styles.wordGrid}>
           {link.words.map((word, index) => (
@@ -398,7 +398,7 @@ function LinkPanel({
         {link.confirmed ? (
           <>
             <Text style={styles.sectionCopy}>
-              On your Mac, click “The words match, approve”. This phone will finish by itself.
+              On your computer, click “The words match, approve”. This phone will finish by itself.
             </Text>
             <ActivityIndicator color={storyboundColors.brass} style={styles.spinner} />
             <PrimaryButton disabled={busy} label="Cancel" variant="quiet" onPress={onCancel} />
@@ -406,7 +406,7 @@ function LinkPanel({
         ) : (
           <>
             <Text style={styles.sectionCopy}>
-              Check that your Mac shows exactly these six words, in this order.
+              Check that your computer shows exactly these six words, in this order.
             </Text>
             <PrimaryButton disabled={busy} label="They match" onPress={onConfirm} />
             <PrimaryButton
@@ -423,17 +423,17 @@ function LinkPanel({
   }
   const ended =
     link?.phase === 'expired'
-      ? 'That request expired. Start again when your Mac is ready.'
+      ? 'That request expired. Start again when your computer is ready.'
       : link?.phase === 'declined'
-        ? 'Your Mac declined that request.'
+        ? 'Your computer declined that request.'
         : null
   return (
     <View style={styles.linkCard}>
       <Text style={styles.sectionCopy}>
-        The easy way: approve this phone from Storybound on your Mac. No code to type.
+        The easy way: approve this phone from Storybound on your computer. No code to type.
       </Text>
       {ended ? <Text style={styles.errorMessage}>{ended}</Text> : null}
-      <PrimaryButton disabled={busy} label="Link to my Mac" onPress={onStart} />
+      <PrimaryButton disabled={busy} label="Link to my computer" onPress={onStart} />
     </View>
   )
 }

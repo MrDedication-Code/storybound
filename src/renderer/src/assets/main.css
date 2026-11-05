@@ -3752,6 +3752,111 @@ kbd {
 .help-guide__privacy p {
   margin: 0;
 }
+.help-guide__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.help-guide__tabs button {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.help-guide__tabs button:hover {
+  color: var(--text);
+}
+.help-guide__tabs button.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+.help-guide__panel {
+  max-height: max(220px, calc(100vh - 330px));
+  padding-right: 8px;
+  overflow-y: auto;
+}
+.help-topic {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.help-topic h3 {
+  margin: 22px 0 8px;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 18px;
+}
+.help-topic p {
+  margin: 0 0 10px;
+}
+.help-topic ol,
+.help-topic ul {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.help-topic strong {
+  color: var(--text);
+}
+.help-topic a {
+  color: var(--accent-bright);
+}
+.help-topic code {
+  white-space: nowrap;
+}
+.help-topic__action {
+  margin: 8px 0;
+}
+.help-topic__table {
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+.help-topic table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.help-topic th,
+.help-topic td {
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.help-topic thead th {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.help-topic tbody th {
+  color: var(--text);
+  font-weight: 600;
+}
+.help-topic__details {
+  margin-top: 18px;
+}
+.help-topic__details summary {
+  color: var(--text);
+  cursor: pointer;
+}
+.help-topic__details pre {
+  max-height: 320px;
+  margin-top: 8px;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 .data-actions {
   display: flex;
   flex-direction: column;

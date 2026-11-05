@@ -760,8 +760,8 @@ export function SettingsPage({
                   <p className="link-request__hint">
                     <Smartphone aria-hidden="true" size={15} />
                     <span>
-                      <strong>Add a phone:</strong> sign in on it, tap “Link to my Mac”, and the
-                      request appears here with six words to compare. No recovery code needed.
+                      <strong>Add a phone:</strong> sign in on it, tap “Link to my computer”, and
+                      the request appears here with six words to compare. No recovery code needed.
                     </span>
                   </p>
                 ) : null}

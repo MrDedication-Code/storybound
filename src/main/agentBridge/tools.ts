@@ -7,6 +7,7 @@ import type {
   StoryEntity,
   StoryEntityType
 } from '../../shared/types'
+import { PERFORMANCE_NOTES_SUMMARY, WRITING_GUIDE } from '../../shared/writingGuide'
 import { StoryboundError } from '../errors'
 import type { StoryboundStore } from '../store'
 import { locateAnchor } from './annotationAnchors'
@@ -41,6 +42,7 @@ export interface AgentTool {
 export const MCP_SERVER_INSTRUCTIONS = [
   'Storybound is the user’s local library app for AI-assisted fiction.',
   'Use these tools to save the story you are writing with the user straight into their library.',
+  'Before planning or writing a book, call get_writing_guide and follow it.',
   'Workflow: call list_books first to check whether the book already exists. Call create_book once',
   'per story, then add_chapter for each chapter in reading order, normally after the user has',
   'approved that chapter. Use get_book and get_chapter to re-read earlier chapters for continuity.',
@@ -60,7 +62,7 @@ export const MCP_SERVER_INSTRUCTIONS = [
   'or beat at that moment, such as [[sigh]], [[laugh]], [[gasp]], [[whispers]], [[short pause]]',
   'or [[long pause]]. They are heard when the chapter is read aloud and never shown in the',
   'reader, exports or word counts. Keep the user’s notes when revising, add notes only when the',
-  'user asks for them, keep each under about ten words, and never use double square brackets',
+  'user wants them, keep each under about ten words, and never use double square brackets',
   'for anything else.',
   'Nothing can be deleted through these tools.'
 ].join(' ')
@@ -303,6 +305,15 @@ const readOnly: AgentToolAnnotations = {
 
 export const AGENT_TOOLS: AgentTool[] = [
   defineTool({
+    name: 'get_writing_guide',
+    title: 'Get the writing guide',
+    description:
+      'Read how to write a book with Storybound. Call this first, before planning, writing or continuing any book. It covers interviewing the user about the story they want, the outline, the story bible and BIBLE.md, the chapter routine, formatting, acting on the user’s notes, and performance notes (audible description) for the voices that read books aloud.',
+    schema: z.object({}),
+    annotations: readOnly,
+    run: () => ({ text: WRITING_GUIDE })
+  }),
+  defineTool({
     name: 'list_books',
     title: 'List books',
     description:
@@ -395,7 +406,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     name: 'create_book',
     title: 'Create book',
     description:
-      'Create a new, empty book in the active library. Add chapters afterwards with add_chapter. Refuses a title that already exists unless allowDuplicateTitle is true.',
+      'Create a new, empty book in the active library. Call get_writing_guide first if you have not read it in this chat. Add chapters afterwards with add_chapter. Refuses a title that already exists unless allowDuplicateTitle is true.',
     schema: z.object({
       title: titleSchema.describe('The book title.'),
       blurb: blurbSchema.optional().describe('A short back-cover style description.'),
@@ -476,8 +487,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   defineTool({
     name: 'add_chapter',
     title: 'Add chapter',
-    description:
-      'Append the next chapter to the end of a book. Call once per chapter, in reading order. Content is Markdown prose without the chapter title as a heading.',
+    description: `Append the next chapter to the end of a book. Call once per chapter, in reading order. Content is Markdown prose without the chapter title as a heading. Scene breaks are a line of * * *. ${PERFORMANCE_NOTES_SUMMARY}`,
     schema: z.object({
       bookId: bookIdSchema,
       title: titleSchema.describe('The chapter title, for example “Chapter 3: The Crossing”.'),
@@ -521,8 +531,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   defineTool({
     name: 'update_chapter',
     title: 'Update chapter',
-    description:
-      'Replace a chapter’s title and/or text when the user asks for a revision. The previous version stays in the chapter’s revision history. The response lists orphanedAnnotations: highlights whose words this rewrite removed (with the original words and the user’s note), so you can tell the user or carry the feedback into the new text. It is empty when none were affected.',
+    description: `Replace a chapter’s title and/or text when the user asks for a revision. Call get_chapter first and edit that live text, never an older copy, so the user’s own edits and notes are kept. ${PERFORMANCE_NOTES_SUMMARY} The previous version stays in the chapter’s revision history. The response lists orphanedAnnotations: highlights whose words this rewrite removed (with the original words and the user’s note), so you can tell the user or carry the feedback into the new text. It is empty when none were affected.`,
     schema: z
       .object({
         chapterId: chapterIdSchema,

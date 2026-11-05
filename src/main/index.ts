@@ -27,6 +27,7 @@ import { registerMediaProtocol } from './media-protocol'
 import { StoryboundStore } from './store'
 import { StoryboundSyncController } from './cloud/syncController'
 import { AgentBridgeController } from './agentBridge'
+import { claudeDesktopConfigPaths } from './agentBridge/claudeDesktopPaths'
 import { ElectronCredentialProtector } from './cloud/electronProtector'
 import { NarrationController } from './narration/controller'
 
@@ -389,10 +390,11 @@ async function start(): Promise<void> {
     executablePath: process.execPath,
     bridgeScriptPath: bridgeScriptPath(),
     defaultInboxPath: join(app.getPath('documents'), 'Storybound Inbox'),
-    claudeDesktopConfigPath:
-      process.platform === 'linux'
-        ? null
-        : join(app.getPath('appData'), 'Claude', 'claude_desktop_config.json'),
+    claudeDesktopConfigPaths: claudeDesktopConfigPaths(
+      process.platform,
+      app.getPath('appData'),
+      process.env.LOCALAPPDATA
+    ),
     logger,
     onChange: (change) => {
       if (mainWindow && !mainWindow.isDestroyed()) {

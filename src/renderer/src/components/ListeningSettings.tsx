@@ -2,9 +2,15 @@ import { Download, Headphones, KeyRound, Play, Search, Trash2 } from 'lucide-rea
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { NarrationStatus, NarrationVoice } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
+import { isMac, isWindows, thisComputer } from '../lib/platform'
 import { Button, ConfirmDialog, InlineNotice } from './ui'
 
 const DEFAULT_STYLE = 'Rich, velvety, unhurried audiobook narration'
+const SYSTEM_VOICE_HINT = isMac
+  ? 'Free and offline. For a better system voice, download a Premium voice in macOS System Settings → Accessibility → Spoken Content.'
+  : isWindows
+    ? 'Free and offline. For more voices, open Windows Settings → Time & language → Speech.'
+    : 'Free and offline, using the voices installed on this computer.'
 const PREVIEW_TEXT =
   'The lamp went out at midnight. Somewhere below, a door closed softly, and then there was nothing at all.'
 
@@ -128,11 +134,8 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
           <legend>Voice</legend>
           <label className="switch-row">
             <span>
-              <strong>Mac system voice</strong>
-              <small>
-                Free and offline. For a better system voice, download a Premium voice in macOS
-                System Settings → Accessibility → Spoken Content.
-              </small>
+              <strong>{isMac ? 'Mac system voice' : 'System voice'}</strong>
+              <small>{SYSTEM_VOICE_HINT}</small>
             </span>
             <input
               checked={status?.engine === 'system'}
@@ -151,7 +154,7 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
               <strong>Free voice · {kokoroVoiceName}</strong>
               <small>
                 {kokoro?.installed
-                  ? 'Kokoro, a natural voice that runs on this Mac. Free, offline, and private.'
+                  ? `Kokoro, a natural voice that runs on ${thisComputer}. Free, offline, and private.`
                   : 'Download it below to use it.'}
               </small>
             </span>
@@ -200,8 +203,8 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
           <div>
             <strong>Free voice</strong>
             <p>
-              Kokoro is an open voice model that reads on this Mac, with no account, no cost, and
-              nothing sent anywhere. It is downloaded once
+              Kokoro is an open voice model that reads on {thisComputer}, with no account, no cost,
+              and nothing sent anywhere. It is downloaded once
               {kokoro ? ` (${megabytes(kokoro.downloadBytes)})` : ''} from Hugging Face and checked
               before use. It reads the words plainly; performance notes are for the Google voice.
             </p>
@@ -294,8 +297,8 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
             <p>
               Uses Google&apos;s Gemini text-to-speech with an API key from your own Google account,
               billed by Google as you go: roughly $4–9 for a full-length novel until the end of
-              2026, about twice that after. Audio you have heard is kept on this Mac, so listening
-              again costs nothing.
+              2026, about twice that after. Audio you have heard is kept on {thisComputer}, so
+              listening again costs nothing.
             </p>
           </div>
           <KeyRound aria-hidden="true" size={21} />
@@ -303,7 +306,9 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
 
         {gemini?.hasKey ? (
           <div className="assistant-actions">
-            <span className="listening-key-saved">API key saved in your Mac&apos;s keychain.</span>
+            <span className="listening-key-saved">
+              {isMac ? 'API key saved in your Mac’s keychain.' : 'API key saved on this computer.'}
+            </span>
             <Button
               disabled={Boolean(busy)}
               icon={Trash2}
@@ -490,7 +495,7 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
         <ConfirmDialog
           confirmLabel="Remove"
           dangerous
-          description="The free voice's files are deleted from this Mac. You can download them again at any time."
+          description={`The free voice's files are deleted from ${thisComputer}. You can download them again at any time.`}
           title="Remove the free voice?"
           onClose={() => setConfirmRemoveKokoro(false)}
           onConfirm={() => {
@@ -507,7 +512,7 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
         <ConfirmDialog
           confirmLabel="Remove key"
           dangerous
-          description="Storybound will stop using the Google voice on this Mac. Audio already made stays cached."
+          description={`Storybound will stop using the Google voice on ${thisComputer}. Audio already made stays cached.`}
           title="Remove the Google API key?"
           onClose={() => setConfirmRemove(false)}
           onConfirm={() => {

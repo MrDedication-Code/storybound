@@ -47,7 +47,8 @@ export interface AgentBridgeOptions {
   executablePath: string
   bridgeScriptPath: string
   defaultInboxPath: string
-  claudeDesktopConfigPath: string | null
+  /** Every place Claude Desktop may read its settings from; empty where it is unavailable. */
+  claudeDesktopConfigPaths: string[]
   logger: AppLogger
   onChange: (change: AgentContentChange) => void
 }
@@ -118,7 +119,7 @@ export class AgentBridgeController {
         null,
         2
       ),
-      claudeDesktopConfigPath: this.options.claudeDesktopConfigPath,
+      claudeDesktopConfigPath: this.options.claudeDesktopConfigPaths[0] ?? null,
       recentActivity: [...this.activity]
     }
   }
@@ -175,13 +176,19 @@ export class AgentBridgeController {
 
   /** Adds (or refreshes) the Storybound entry in Claude Desktop's MCP configuration. */
   connectClaudeDesktop(): string {
-    const path = this.options.claudeDesktopConfigPath
-    if (!path) {
+    const paths = this.options.claudeDesktopConfigPaths
+    if (!paths.length) {
       throw new StoryboundError(
         'VALIDATION_ERROR',
         'Claude Desktop is not available on this system.'
       )
     }
+    for (const path of paths) this.addToClaudeDesktopConfig(path)
+    this.record('mcp', 'Storybound was added to Claude Desktop.', false)
+    return paths[0]
+  }
+
+  private addToClaudeDesktopConfig(path: string): void {
     let config: Record<string, unknown> = {}
     if (existsSync(path)) {
       try {
@@ -207,8 +214,6 @@ export class AgentBridgeController {
     const temporaryPath = `${path}.storybound-tmp`
     writeFileSync(temporaryPath, `${JSON.stringify(config, null, 2)}\n`)
     renameSync(temporaryPath, path)
-    this.record('mcp', 'Storybound was added to Claude Desktop.', false)
-    return path
   }
 
   scanInboxNow(): InboxScanResult {
