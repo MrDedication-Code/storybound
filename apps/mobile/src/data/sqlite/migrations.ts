@@ -2,7 +2,7 @@ import type { SqlDatabasePort } from './databasePort'
 import { seedLibrary } from './seedData'
 
 export const DATABASE_NAME = 'storybound.db'
-export const DATABASE_VERSION = 7
+export const DATABASE_VERSION = 8
 
 const schemaVersionOne = `
 CREATE TABLE IF NOT EXISTS libraries (
@@ -283,6 +283,12 @@ async function createFirstLibrary(transaction: SqlDatabasePort): Promise<void> {
   )
 }
 
+/** Who a shared book came from, and whether it is locked. They arrive through sync. */
+const schemaVersionEight = `
+ALTER TABLE books ADD COLUMN share_sender_name TEXT;
+ALTER TABLE books ADD COLUMN share_mode TEXT;
+`
+
 export async function migrateDatabase(database: SqlDatabasePort): Promise<void> {
   await database.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -334,6 +340,11 @@ export async function migrateDatabase(database: SqlDatabasePort): Promise<void> 
     if (currentVersion < 7) {
       await transaction.execAsync(schemaVersionSeven)
       await transaction.execAsync('PRAGMA user_version = 7')
+    }
+
+    if (currentVersion < 8) {
+      await transaction.execAsync(schemaVersionEight)
+      await transaction.execAsync('PRAGMA user_version = 8')
     }
   })
 }

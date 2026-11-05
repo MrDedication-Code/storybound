@@ -1,6 +1,6 @@
 import { BookOpen, Download, Keyboard, LibraryBig, PencilLine, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
-import { ListeningGuide, SyncGuide, WritingGuide } from './HelpGuideTopics'
+import { ListeningGuide, SendingGuide, SyncGuide, WritingGuide } from './HelpGuideTopics'
 import { Button, Modal } from './ui'
 
 interface HelpModalProps {
@@ -12,6 +12,7 @@ const TOPICS = [
   { id: 'start', label: 'Start here' },
   { id: 'writing', label: 'Write with Claude' },
   { id: 'sync', label: 'Sync' },
+  { id: 'sending', label: 'Send a book' },
   { id: 'listening', label: 'Listening' }
 ] as const
 
@@ -54,6 +55,7 @@ export function HelpModal({ onClose, onCreateBook }: HelpModalProps): React.JSX.
         {topic === 'start' ? <StartHere /> : null}
         {topic === 'writing' ? <WritingGuide /> : null}
         {topic === 'sync' ? <SyncGuide /> : null}
+        {topic === 'sending' ? <SendingGuide /> : null}
         {topic === 'listening' ? <ListeningGuide /> : null}
       </div>
       <div className="modal__actions">

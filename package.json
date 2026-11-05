@@ -1,6 +1,6 @@
 {
   "name": "storybound",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "A calm, local-first library for AI-generated stories",
   "private": true,
   "workspaces": [
@@ -75,6 +75,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
@@ -91,6 +92,7 @@
     "react-dom": "19.3.0",
     "sharp": "^0.35.3",
     "supabase": "2.111.0",
+    "three": "^0.180.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"

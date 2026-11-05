@@ -66,7 +66,9 @@ import {
   updateTagSchema,
   updateWritingGoalSchema,
   versionedIdSchema,
-  writingStatsQuerySchema
+  writingStatsQuerySchema,
+  shareBookSchema,
+  updateShareSchema
 } from '../shared/validation'
 import { IPC_CHANNELS } from './channels'
 import { apiFailure, StoryboundError } from './errors'
@@ -80,6 +82,7 @@ import type { AppLogger } from './logger'
 import { buildBookEpub3, buildBookMarkdown, buildBookPrintHtml } from './standardExport'
 import { buildOfflineCompanionHtml } from './companionExport'
 import type { StoryboundStore } from './store'
+import type { StoryboundSharingController } from './cloud/sharingController'
 import type { StoryboundSyncController } from './cloud/syncController'
 import { INBOX_INSTRUCTIONS, type AgentBridgeController } from './agentBridge'
 import type { NarrationController } from './narration/controller'
@@ -87,6 +90,7 @@ import type { NarrationController } from './narration/controller'
 interface IpcDependencies {
   store: StoryboundStore
   sync: StoryboundSyncController
+  sharing: StoryboundSharingController
   agentBridge: AgentBridgeController
   narration: NarrationController
   logger: AppLogger
@@ -118,6 +122,7 @@ function writeAtomically(targetPath: string, data: string | Buffer): void {
 export function registerStoryboundIpc({
   store,
   sync,
+  sharing,
   agentBridge,
   narration,
   logger,
@@ -378,6 +383,20 @@ export function registerStoryboundIpc({
       message: 'Storybound was added to Claude Desktop. Quit and reopen Claude Desktop to use it.'
     }
   })
+  handle(IPC_CHANNELS.sharingStatus, noInput, () => sharing.status())
+  handle(IPC_CHANNELS.sharingContacts, noInput, () => sharing.listContacts())
+  handle(IPC_CHANNELS.sharingCopyAddress, noInput, async () => {
+    clipboard.writeText(await sharing.addressForCopying())
+    return { message: 'Copied your Storybound address.' }
+  })
+  handle(IPC_CHANNELS.sharingListShares, idSchema, (bookId) => sharing.listShares(bookId))
+  handle(IPC_CHANNELS.sharingShareBook, shareBookSchema, (input) => sharing.shareBook(input))
+  handle(IPC_CHANNELS.sharingSendUpdate, updateShareSchema, (input) => sharing.sendUpdate(input))
+  handle(IPC_CHANNELS.sharingStop, idSchema, (shareId) => sharing.stopSharing(shareId))
+  handle(IPC_CHANNELS.sharingListParcels, noInput, () => sharing.listParcels())
+  handle(IPC_CHANNELS.sharingOpenParcel, idSchema, (parcelId) => sharing.openParcel(parcelId))
+  handle(IPC_CHANNELS.sharingAcceptParcel, idSchema, (parcelId) => sharing.acceptParcel(parcelId))
+  handle(IPC_CHANNELS.sharingDeclineParcel, idSchema, (parcelId) => sharing.declineParcel(parcelId))
   handle(IPC_CHANNELS.syncStatus, noInput, () => sync.status())
   handle(IPC_CHANNELS.syncSignUp, syncCredentialsSchema, (input) => sync.signUp(input))
   handle(IPC_CHANNELS.syncSignIn, syncCredentialsSchema, (input) => sync.signIn(input))

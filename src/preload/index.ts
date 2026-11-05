@@ -138,6 +138,19 @@ const api: StoryboundApi = {
     copy: (kind) => invoke(IPC_CHANNELS.agentBridgeCopy, kind),
     connectClaudeDesktop: () => invoke(IPC_CHANNELS.agentBridgeConnectClaudeDesktop)
   },
+  sharing: {
+    status: () => invoke(IPC_CHANNELS.sharingStatus),
+    contacts: () => invoke(IPC_CHANNELS.sharingContacts),
+    copyAddress: () => invoke(IPC_CHANNELS.sharingCopyAddress),
+    listShares: (bookId) => invoke(IPC_CHANNELS.sharingListShares, bookId),
+    shareBook: (input) => invoke(IPC_CHANNELS.sharingShareBook, input),
+    sendUpdate: (input) => invoke(IPC_CHANNELS.sharingSendUpdate, input),
+    stop: (shareId) => invoke(IPC_CHANNELS.sharingStop, shareId),
+    listParcels: () => invoke(IPC_CHANNELS.sharingListParcels),
+    openParcel: (parcelId) => invoke(IPC_CHANNELS.sharingOpenParcel, parcelId),
+    acceptParcel: (parcelId) => invoke(IPC_CHANNELS.sharingAcceptParcel, parcelId),
+    declineParcel: (parcelId) => invoke(IPC_CHANNELS.sharingDeclineParcel, parcelId)
+  },
   sync: {
     status: () => invoke(IPC_CHANNELS.syncStatus),
     signUp: (input) => invoke(IPC_CHANNELS.syncSignUp, input),

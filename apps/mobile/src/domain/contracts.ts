@@ -29,6 +29,10 @@ export interface BookSummary {
   totalWordCount: number
   progressPercentage: number
   lastReadAt: string | null
+  /** Who sent this book, when it arrived as a parcel. */
+  shareSenderName: string | null
+  /** A read-only book can be read, marked and listened to, but not changed. */
+  shareMode: 'read-only' | 'editable' | null
 }
 
 /** A library that holds at least one book; empty ones are not shown on the phone. */

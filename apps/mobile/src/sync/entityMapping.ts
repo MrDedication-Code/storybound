@@ -126,6 +126,14 @@ export function coverToneFromStyle(style: string): 'forest' | 'moonlit' | 'ember
   return 'forest'
 }
 
+function shareMode(row: Record<string, unknown>): string | null {
+  const mode = nullableString(row, 'share_mode')
+  if (mode !== null && mode !== 'read-only' && mode !== 'editable') {
+    throw new Error('The synced share details are invalid.')
+  }
+  return mode
+}
+
 export function normalizeRemoteEntity(
   entityType: CoreSyncEntityType,
   entityId: string,
@@ -195,7 +203,14 @@ export function normalizeRemoteEntity(
         cover_position_x: numberValue(row, 'cover_position_x', 0, 100),
         cover_position_y: numberValue(row, 'cover_position_y', 0, 100),
         // Absent in payloads from older versions, which then fall back to the profile library.
-        library_id: nullableString(row, 'library_id')
+        library_id: nullableString(row, 'library_id'),
+        // Only present when the sender knows about sharing, so an older record clears nothing.
+        ...('share_mode' in row
+          ? {
+              share_sender_name: nullableString(row, 'share_sender_name'),
+              share_mode: shareMode(row)
+            }
+          : {})
       }
     }
   }

@@ -1,4 +1,15 @@
 import type {
+  BookShare,
+  BookShareOrigin,
+  ParcelPreview,
+  ParcelResult,
+  ParcelSummary,
+  ShareBookInput,
+  ShareContact,
+  SharingStatus,
+  UpdateShareInput
+} from './sharing'
+import type {
   SyncConflictRecord,
   SyncCredentialsInput,
   SyncDeviceSummary,
@@ -59,6 +70,8 @@ export interface BookSummary {
   coverStyle: CoverStyle
   coverPositionX: number
   coverPositionY: number
+  /** Set when this book arrived as a parcel from someone else. */
+  share: BookShareOrigin | null
   createdAt: string
   updatedAt: string
   lastOpenedAt: string | null
@@ -955,6 +968,19 @@ export interface StoryboundApi {
     scanInbox(): Promise<ApiResult<InboxScanResult>>
     copy(kind: AgentBridgeCopyKind): Promise<ApiResult<OperationResult>>
     connectClaudeDesktop(): Promise<ApiResult<OperationResult>>
+  }
+  sharing: {
+    status(): Promise<ApiResult<SharingStatus>>
+    contacts(): Promise<ApiResult<ShareContact[]>>
+    copyAddress(): Promise<ApiResult<OperationResult>>
+    listShares(bookId: string): Promise<ApiResult<BookShare[]>>
+    shareBook(input: ShareBookInput): Promise<ApiResult<BookShare>>
+    sendUpdate(input: UpdateShareInput): Promise<ApiResult<BookShare>>
+    stop(shareId: string): Promise<ApiResult<void>>
+    listParcels(): Promise<ApiResult<ParcelSummary[]>>
+    openParcel(parcelId: string): Promise<ApiResult<ParcelPreview>>
+    acceptParcel(parcelId: string): Promise<ApiResult<ParcelResult>>
+    declineParcel(parcelId: string): Promise<ApiResult<void>>
   }
   sync: {
     status(): Promise<ApiResult<SyncRuntimeStatus>>

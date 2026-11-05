@@ -224,4 +224,42 @@ describe('editing on the phone', () => {
     const [version] = await repository.listChapterRevisions(book.chapters[0].id)
     expect(version).toMatchObject({ reason: 'Before an edit from another device', content: '' })
   })
+
+  describe('a book shared as read-only', () => {
+    let bookId = ''
+    let chapterId = ''
+
+    beforeEach(async () => {
+      bookId = (await repository.createBook({ ...details, libraryId: 'default-library' })).id
+      chapterId = (await repository.createChapter(bookId)).id
+      await database.runAsync(
+        `UPDATE books SET share_sender_name = 'Jack', share_mode = 'read-only' WHERE id = ?`,
+        [bookId]
+      )
+    })
+
+    it('says who it came from', async () => {
+      const book = await repository.getBook(bookId)
+      expect(book).toMatchObject({ shareSenderName: 'Jack', shareMode: 'read-only' })
+    })
+
+    it('cannot be changed from any screen', async () => {
+      const locked = 'read-only'
+      const chapter = { id: chapterId, title: 'x', content: 'x' }
+      await expect(repository.updateChapter(chapter)).rejects.toThrow(locked)
+      await expect(repository.createChapter(bookId)).rejects.toThrow(locked)
+      await expect(repository.duplicateChapter(chapterId)).rejects.toThrow(locked)
+      await expect(repository.trashChapter(chapterId)).rejects.toThrow(locked)
+      await expect(repository.updateBookDetails(bookId, details)).rejects.toThrow(locked)
+      await expect(repository.reorderChapters(bookId, [chapterId])).rejects.toThrow(locked)
+      await expect(
+        repository.splitChapter({ id: chapterId, offset: 0, newTitle: 'x' })
+      ).rejects.toThrow(locked)
+    })
+
+    it('can still be removed from the library', async () => {
+      await repository.trashBook(bookId)
+      expect((await repository.listTrashedBooks()).map((book) => book.id)).toContain(bookId)
+    })
+  })
 })

@@ -65,6 +65,7 @@ export const book: BookDetail = {
   coverStyle: 'classic',
   coverPositionX: 50,
   coverPositionY: 50,
+  share: null,
   createdAt: timestamp,
   updatedAt: timestamp,
   lastOpenedAt: timestamp,
@@ -576,6 +577,21 @@ export function makeApi(): StoryboundApi {
       scanInbox: vi.fn(async () => ok({ imported: 0, failed: 0, skipped: 0 })),
       copy: vi.fn(async () => ok({ message: 'Copied.' })),
       connectClaudeDesktop: vi.fn(async () => ok({ message: 'Connected.' }))
+    },
+    sharing: {
+      status: vi.fn(async () =>
+        ok({ available: true, address: 'K7QM-2XPD-9RTA-HF4W', senderName: 'Jack' })
+      ),
+      contacts: vi.fn(async () => ok([])),
+      copyAddress: vi.fn(async () => ok({ message: 'Copied.' })),
+      listShares: vi.fn(async () => ok([])),
+      shareBook: vi.fn(),
+      sendUpdate: vi.fn(),
+      stop: vi.fn(async () => ok(undefined)),
+      listParcels: vi.fn(async () => ok([])),
+      openParcel: vi.fn(),
+      acceptParcel: vi.fn(),
+      declineParcel: vi.fn(async () => ok(undefined))
     },
     sync: {
       status: vi.fn(async () =>

@@ -558,3 +558,20 @@ export const locateSearchHitSchema = z.object({
   term: searchTermSchema
 })
 export const closeReadySchema = z.boolean()
+
+const shareModeSchema = z.enum(['read-only', 'editable'])
+
+export const shareBookSchema = z.object({
+  bookId: idSchema,
+  address: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1).max(120),
+  senderName: z.string().trim().min(1).max(120),
+  mode: shareModeSchema,
+  includeBible: z.boolean()
+})
+
+export const updateShareSchema = z.object({
+  shareId: idSchema,
+  mode: shareModeSchema.optional(),
+  includeBible: z.boolean().optional()
+})

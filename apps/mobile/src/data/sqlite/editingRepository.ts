@@ -292,6 +292,20 @@ type EditingOperations = Pick<
   updateBookDetails(bookId: string, input: BookDetailsInput): Promise<void>
 }
 
+/** A book sent as read-only cannot be changed here, whichever screen asks. */
+export async function requireEditableBook(
+  database: Pick<SqlDatabasePort, 'getFirstAsync'>,
+  bookId: string
+): Promise<void> {
+  const row = await database.getFirstAsync<{ share_mode: string | null }>(
+    'SELECT share_mode FROM books WHERE id = ?',
+    [bookId]
+  )
+  if (row?.share_mode === 'read-only') {
+    throw new Error('This book was shared with you as read-only, so it cannot be changed.')
+  }
+}
+
 /** Book, chapter, and version operations for the phone's editor mode. */
 export function createEditingOperations(
   database: SqlDatabasePort,
@@ -363,6 +377,7 @@ export function createEditingOperations(
         const changedAt = now().toISOString()
         await database.transactionAsync(async (transaction) => {
           await requireActiveBook(transaction, bookId)
+          await requireEditableBook(transaction, bookId)
           await bumpBook(
             transaction,
             bookId,
@@ -441,6 +456,7 @@ export function createEditingOperations(
         const chapterId = createId()
         await database.transactionAsync(async (transaction) => {
           await requireActiveBook(transaction, bookId)
+          await requireEditableBook(transaction, bookId)
           const count = (await activeChapterIds(transaction, bookId)).length
           await insertChapter(transaction, {
             id: chapterId,
@@ -466,6 +482,7 @@ export function createEditingOperations(
         const copyId = createId()
         await database.transactionAsync(async (transaction) => {
           const original = await requireChapterRow(transaction, chapterId)
+          await requireEditableBook(transaction, original.book_id)
           await insertChapter(transaction, {
             id: copyId,
             bookId: original.book_id,
@@ -487,6 +504,7 @@ export function createEditingOperations(
       return writes.run(async () => {
         const changedAt = now().toISOString()
         await database.transactionAsync(async (transaction) => {
+          await requireEditableBook(transaction, bookId)
           const current = await activeChapterIds(transaction, bookId)
           if (
             current.length !== chapterIds.length ||
@@ -505,6 +523,7 @@ export function createEditingOperations(
         const deletedAt = now().toISOString()
         await database.transactionAsync(async (transaction) => {
           const chapter = await requireChapterRow(transaction, chapterId)
+          await requireEditableBook(transaction, chapter.book_id)
           await saveChapterRevision(transaction, chapter, 'Moved to Trash', deletedAt, createId())
           await trashChapterRow(transaction, chapter, deletedAt)
         })
@@ -517,6 +536,7 @@ export function createEditingOperations(
         await database.transactionAsync(async (transaction) => {
           const chapter = await requireChapterRow(transaction, chapterId, { trashed: true })
           await requireActiveBook(transaction, chapter.book_id)
+          await requireEditableBook(transaction, chapter.book_id)
           const order = await activeChapterIds(transaction, chapter.book_id)
           order.splice(
             Math.min(chapter.trashed_from_position ?? order.length, order.length),
@@ -557,6 +577,7 @@ export function createEditingOperations(
         const newId = createId()
         await database.transactionAsync(async (transaction) => {
           const chapter = await requireChapterRow(transaction, input.id)
+          await requireEditableBook(transaction, chapter.book_id)
           const offset = Math.trunc(input.offset)
           const before = chapter.content.slice(0, offset).trimEnd()
           const after = chapter.content.slice(offset).trimStart()
@@ -592,6 +613,7 @@ export function createEditingOperations(
         const changedAt = now().toISOString()
         await database.transactionAsync(async (transaction) => {
           const chapter = await requireChapterRow(transaction, chapterId)
+          await requireEditableBook(transaction, chapter.book_id)
           const order = await activeChapterIds(transaction, chapter.book_id)
           const nextId = order[order.indexOf(chapterId) + 1]
           if (!nextId) throw new Error('This is the last chapter, so there is nothing to merge.')
@@ -651,6 +673,10 @@ export function createEditingOperations(
             content: string
           }>('SELECT chapter_id, title, content FROM chapter_revisions WHERE id = ?', [revisionId])
           if (!revision) throw new Error('That version could not be found.')
+          await requireEditableBook(
+            transaction,
+            (await requireChapterRow(transaction, revision.chapter_id)).book_id
+          )
           chapterId = revision.chapter_id
           const chapter = await requireChapterRow(transaction, chapterId)
           await saveChapterRevision(

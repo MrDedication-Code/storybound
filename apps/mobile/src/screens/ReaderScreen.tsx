@@ -597,7 +597,7 @@ export function ReaderScreen({
 
         <View style={[styles.chapterActions, { borderTopColor: palette.line }]}>
           <PrimaryButton label={notesLabel} variant="quiet" onPress={() => setListOpen(true)} />
-          {onEditChapter ? (
+          {onEditChapter && book.shareMode !== 'read-only' ? (
             <PrimaryButton
               label="Edit chapter"
               variant="quiet"

@@ -21,6 +21,10 @@ The first signed-in device creates the encrypted vault and displays a one-time r
 
 The hardened protocol migration `20260806224500` removes every legacy RPC overload and adds a random per-device possession token. If a development installation ran an interim protocol that already stored a recovery verifier, its legacy devices are revoked deliberately; recover the vault once on each device to register a new protected device record. A still-earlier pre-verifier development vault cannot be authenticated in place and must be reset and re-uploaded from its authoritative local library. No hosted production schema predates the hardened migration. Normal later sign-out/sign-in cycles preserve the device credential and do not require the recovery code again.
 
+## Sending books between accounts
+
+Migration `20261105150000` adds Storybound addresses and parcels. A signed-in, unlocked device publishes its public sharing keys, and parcels pass through `send_storybound_parcel`, `list_storybound_parcels`, `get_storybound_parcel` and `delete_storybound_parcel`. Both tables refuse direct access. `SHARING_PLAN.md` explains the design.
+
 ## Operational checks
 
 - `npm run supabase:reset`

@@ -36,7 +36,7 @@ export interface SyncSigningKeyPair {
 
 export interface SyncWrappingKeyPair extends SyncSigningKeyPair {}
 
-function bytesToBase64(value: Uint8Array): string {
+export function bytesToBase64(value: Uint8Array): string {
   const BufferConstructor = (globalThis as unknown as { Buffer?: unknown }).Buffer as
     { from(value: Uint8Array): { toString(encoding: 'base64'): string } } | undefined
   if (BufferConstructor) return BufferConstructor.from(value).toString('base64')
@@ -46,7 +46,7 @@ function bytesToBase64(value: Uint8Array): string {
   return globalThis.btoa(binary)
 }
 
-function base64ToBytes(value: string): Uint8Array {
+export function base64ToBytes(value: string): Uint8Array {
   const BufferConstructor = (globalThis as unknown as { Buffer?: unknown }).Buffer as
     { from(value: string, encoding: 'base64'): Uint8Array } | undefined
   if (BufferConstructor) return new Uint8Array(BufferConstructor.from(value, 'base64'))
@@ -220,7 +220,7 @@ export function keyedContentId(vaultKey: Uint8Array, value: Uint8Array): string 
   return bytesToBase64(hmac(sha256, vaultKey, value))
 }
 
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+export function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false
   let difference = 0
   for (let index = 0; index < left.length; index += 1) {
@@ -276,7 +276,7 @@ function unwrapVaultKey(envelope: SyncKeyEnvelope, wrappingKey: Uint8Array): Uin
   )
 }
 
-function encodeBase32(value: Uint8Array): string {
+export function encodeBase32(value: Uint8Array): string {
   let buffer = 0
   let bits = 0
   let result = ''

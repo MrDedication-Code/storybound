@@ -24,6 +24,14 @@ import {
   createLibraryBackupManifest,
   libraryBackupManifestSchema
 } from '../shared/portable'
+import { canonicalJson, sharedContentHash } from '@storybound/sync'
+import type {
+  BookShare,
+  ParcelResult,
+  ShareContact,
+  ShareMode,
+  SharedBook
+} from '../shared/sharing'
 import { mergeChapterContent, reorderByIds, splitContentAtOffset } from '../shared/library'
 import { countWords, createExcerpt, detectChapterSplits, normalizeSearch } from '../shared/text'
 import type {
@@ -159,6 +167,10 @@ import { COVER_EXTENSIONS, managedCoverPath, safeRemoveManagedCover } from './co
 import { StoryboundError } from './errors'
 
 const MAX_COVER_BYTES = 15 * 1024 * 1024
+/** What a reader may still change on a locked book, because it is theirs rather than the book's. */
+const READER_BOOK_FIELDS = new Set(['id', 'personalNotes', 'rating', 'isFavourite', 'isPinned'])
+const READ_ONLY_MESSAGE =
+  'This book was shared with you as read-only, so it cannot be changed or exported.'
 const MAX_IMPORT_BYTES = 512 * 1024 * 1024
 const MAX_EXPORT_BYTES = 500 * 1024 * 1024
 const RESTORE_REQUIRED_COLUMNS = {
@@ -254,6 +266,12 @@ interface BookRow {
   chapter_count: number
   progress_percentage: number
   has_finished_current_content: number
+  share_id: string | null
+  share_sender_name: string | null
+  share_sender_address: string | null
+  share_mode: ShareMode | null
+  share_sequence: number
+  cover_version: number
 }
 
 interface ChapterRow {
@@ -543,6 +561,115 @@ const ANCHOR_SELECT = `
 `
 
 const WORD_TOKEN_PATTERN = /[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu
+
+export interface ShareContactKeys {
+  address: string
+  name: string
+  encryptionPublicKey: string
+  signingPublicKey: string
+}
+
+export interface BookShareRow {
+  id: string
+  book_id: string
+  contact_address: string
+  mode: ShareMode
+  include_bible: number
+  sequence: number
+  details_hash: string | null
+  cover_version: number
+  created_at: string
+  last_sent_at: string
+}
+
+export interface PreparedSharedBook {
+  body: SharedBook
+  detailsHash: string
+  coverVersion: number
+  chapterHashes: Array<{ chapterId: string; hash: string }>
+  newChapterCount: number
+  title: string
+  authorName: string
+}
+
+export interface ReceivedShareOrigin {
+  shareId: string
+  sequence: number
+  mode: ShareMode
+  senderName: string
+  senderAddress: string
+}
+
+interface ExistingSharedBook {
+  cover_image_path: string | null
+  share_sender_address: string | null
+  share_sequence: number
+  share_mode: ShareMode | null
+  title: string
+  subtitle: string
+  series_name: string
+  series_position: number | null
+  author_name: string
+  blurb: string
+  status: 'ongoing' | 'completed'
+  language_code: string
+  cover_style: BookSummary['coverStyle']
+  cover_position_x: number
+  cover_position_y: number
+}
+
+type SharedDetailsSource = Pick<
+  ExistingSharedBook,
+  | 'title'
+  | 'subtitle'
+  | 'series_name'
+  | 'series_position'
+  | 'author_name'
+  | 'blurb'
+  | 'status'
+  | 'language_code'
+  | 'cover_style'
+  | 'cover_position_x'
+  | 'cover_position_y'
+>
+
+function detailsOf(
+  book: SharedDetailsSource
+): Omit<SharedBook['book'], 'sourceId' | 'createdAt' | 'baseHash'> {
+  return {
+    title: book.title,
+    subtitle: book.subtitle,
+    seriesName: book.series_name,
+    seriesPosition: book.series_position,
+    authorName: book.author_name,
+    blurb: book.blurb,
+    status: book.status,
+    languageCode: book.language_code,
+    coverStyle: book.cover_style,
+    coverPositionX: book.cover_position_x,
+    coverPositionY: book.cover_position_y
+  }
+}
+
+function sharedDetailsHash(details: ReturnType<typeof detailsOf>): string {
+  return sharedContentHash(canonicalJson(details))
+}
+
+function sharedChapterHash(title: string, content: string): string {
+  return sharedContentHash(`${title}\u0000${content}`)
+}
+
+/**
+ * A shared book's ids are worked out from the share and the sender's ids, so every device of the
+ * recipient recognises the same chapter, and two people's copies can never collide.
+ */
+export function sharedEntityId(shareId: string, sourceId: string): string {
+  const hash = createHash('sha256').update(`storybound-share:${shareId}:${sourceId}`).digest()
+  hash[6] = (hash[6] & 0x0f) | 0x50
+  hash[8] = (hash[8] & 0x3f) | 0x80
+  const hex = hash.subarray(0, 16).toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 function now(): string {
   return new Date().toISOString()
@@ -957,6 +1084,13 @@ export class StoryboundStore {
   updateBook(input: UpdateBookInput): BookDetail {
     const parsed = updateBookSchema.parse(input)
     this.requireBook(parsed.id)
+    if (
+      Object.entries(parsed).some(
+        ([field, value]) => value !== undefined && !READER_BOOK_FIELDS.has(field)
+      )
+    ) {
+      this.assertBookEditable(parsed.id)
+    }
     const assignments: string[] = []
     const values: unknown[] = []
     if (parsed.title !== undefined) {
@@ -1048,6 +1182,7 @@ export class StoryboundStore {
   setCoverFromFile(id: string, sourcePath: string): BookDetail {
     const bookId = idSchema.parse(id)
     const book = this.requireBook(bookId)
+    this.assertBookEditable(bookId)
     let source: Buffer
     try {
       const stats = statSync(sourcePath)
@@ -1084,6 +1219,7 @@ export class StoryboundStore {
   removeCover(id: string): BookDetail {
     const bookId = idSchema.parse(id)
     const book = this.requireBook(bookId)
+    this.assertBookEditable(bookId)
     this.database
       .prepare(
         `UPDATE books SET cover_image_path = NULL, updated_at = ?,
@@ -1516,6 +1652,7 @@ export class StoryboundStore {
   createStoryEntity(input: CreateStoryEntityInput): StoryEntity {
     const parsed = createStoryEntitySchema.parse(input)
     this.requireActiveStoryBook(parsed.bookId)
+    this.assertBookEditable(parsed.bookId)
     const id = randomUUID()
     const timestamp = now()
     const position =
@@ -1555,6 +1692,7 @@ export class StoryboundStore {
   updateStoryEntity(input: UpdateStoryEntityInput): StoryEntity {
     const parsed = updateStoryEntitySchema.parse(input)
     this.requireActiveStoryEntity(parsed.id)
+    this.assertStoryEntityEditable(parsed.id)
     const assignments: string[] = []
     const values: unknown[] = []
     const columns = {
@@ -1587,6 +1725,7 @@ export class StoryboundStore {
 
   removeStoryEntity(id: string): void {
     const entity = this.requireActiveStoryEntity(idSchema.parse(id))
+    this.assertBookEditable(entity.book_id)
     const timestamp = now()
     this.database.transaction(() => {
       this.database
@@ -1632,6 +1771,7 @@ export class StoryboundStore {
   createStoryEntityChapterLink(input: CreateStoryEntityChapterLinkInput): StoryEntityChapterLink {
     const parsed = createStoryEntityChapterLinkSchema.parse(input)
     const entity = this.requireActiveStoryEntity(parsed.entityId)
+    this.assertBookEditable(entity.book_id)
     const chapter = this.requireChapter(parsed.chapterId)
     if (chapter.book_id !== entity.book_id) {
       throw new StoryboundError(
@@ -1664,6 +1804,7 @@ export class StoryboundStore {
   updateStoryEntityChapterLink(input: UpdateStoryEntityChapterLinkInput): StoryEntityChapterLink {
     const parsed = updateStoryEntityChapterLinkSchema.parse(input)
     const existing = this.getActiveStoryEntityChapterLink(parsed.id)
+    this.assertBookEditable(existing.bookId)
     const assignments: string[] = []
     const values: unknown[] = []
     if (parsed.chapterId !== undefined) {
@@ -1701,6 +1842,7 @@ export class StoryboundStore {
 
   removeStoryEntityChapterLink(id: string): void {
     const link = this.getActiveStoryEntityChapterLink(idSchema.parse(id))
+    this.assertBookEditable(link.bookId)
     const timestamp = now()
     this.database
       .prepare(
@@ -1750,6 +1892,7 @@ export class StoryboundStore {
   createStoryEntityRelation(input: CreateStoryEntityRelationInput): StoryEntityRelation {
     const parsed = createStoryEntityRelationSchema.parse(input)
     const source = this.requireActiveStoryEntity(parsed.fromEntityId)
+    this.assertBookEditable(source.book_id)
     const target = this.requireActiveStoryEntity(parsed.toEntityId)
     if (source.book_id !== target.book_id) {
       throw new StoryboundError(
@@ -1783,6 +1926,7 @@ export class StoryboundStore {
   updateStoryEntityRelation(input: UpdateStoryEntityRelationInput): StoryEntityRelation {
     const parsed = updateStoryEntityRelationSchema.parse(input)
     const existing = this.getActiveStoryEntityRelation(parsed.id)
+    this.assertBookEditable(existing.bookId)
     const sourceId = parsed.fromEntityId ?? existing.fromEntityId
     const targetId = parsed.toEntityId ?? existing.toEntityId
     if (sourceId === targetId) {
@@ -1826,6 +1970,7 @@ export class StoryboundStore {
 
   removeStoryEntityRelation(id: string): void {
     const relation = this.getActiveStoryEntityRelation(idSchema.parse(id))
+    this.assertBookEditable(relation.bookId)
     const timestamp = now()
     this.database
       .prepare(
@@ -1844,6 +1989,7 @@ export class StoryboundStore {
   createChapter(input: CreateChapterInput): Chapter {
     const parsed = createChapterSchema.parse(input)
     this.requireBook(parsed.bookId)
+    this.assertBookEditable(parsed.bookId)
     const chapterId = randomUUID()
     const timestamp = now()
     this.database.transaction(() => {
@@ -1880,6 +2026,7 @@ export class StoryboundStore {
   updateChapter(input: UpdateChapterInput): Chapter {
     const parsed = updateChapterSchema.parse(input)
     const chapter = this.requireChapter(parsed.id)
+    this.assertBookEditable(chapter.book_id)
     const assignments: string[] = []
     const values: unknown[] = []
     if (parsed.title !== undefined) {
@@ -1963,6 +2110,7 @@ export class StoryboundStore {
   reorderChapters(input: ReorderChaptersInput): ChapterSummary[] {
     const parsed = reorderChaptersSchema.parse(input)
     this.requireBook(parsed.bookId)
+    this.assertBookEditable(parsed.bookId)
     const chapters = this.chapterRows(parsed.bookId)
     const ordered = reorderByIds(chapters, parsed.chapterIds)
     this.database.transaction(() => {
@@ -1979,6 +2127,7 @@ export class StoryboundStore {
   duplicateChapter(id: string): Chapter {
     const chapterId = idSchema.parse(id)
     const original = this.requireChapter(chapterId)
+    this.assertBookEditable(original.book_id)
     const duplicateId = randomUUID()
     const timestamp = now()
     this.database.transaction(() => {
@@ -2012,6 +2161,7 @@ export class StoryboundStore {
   removeChapter(id: string): void {
     const chapterId = idSchema.parse(id)
     const chapter = this.requireChapter(chapterId)
+    this.assertBookEditable(chapter.book_id)
     const timestamp = now()
     this.database.transaction(() => {
       this.saveChapterRevision(chapter, 'Moved to chapter trash')
@@ -2063,6 +2213,7 @@ export class StoryboundStore {
   restoreChapter(id: string): Chapter {
     const chapterId = idSchema.parse(id)
     const chapter = this.requireAnyChapter(chapterId)
+    this.assertBookEditable(chapter.book_id)
     if (!chapter.deleted_at) return this.getChapter(chapterId)
     const timestamp = now()
     this.database.transaction(() => {
@@ -2084,6 +2235,7 @@ export class StoryboundStore {
 
   removeChapterPermanently(id: string): void {
     const chapter = this.requireAnyChapter(idSchema.parse(id))
+    this.assertBookEditable(chapter.book_id)
     if (!chapter.deleted_at) {
       throw new StoryboundError(
         'CONFLICT',
@@ -2117,6 +2269,7 @@ export class StoryboundStore {
   restoreChapterRevision(input: RestoreChapterRevisionInput): Chapter {
     const parsed = restoreChapterRevisionSchema.parse(input)
     const chapter = this.requireChapter(parsed.chapterId)
+    this.assertBookEditable(chapter.book_id)
     const revision = this.getChapterRevision(parsed.revisionId)
     if (revision.chapterId !== chapter.id || revision.content === undefined) {
       throw new StoryboundError('VALIDATION_ERROR', 'That version does not belong to this chapter.')
@@ -2139,6 +2292,7 @@ export class StoryboundStore {
   splitChapter(input: SplitChapterInput): Chapter {
     const parsed = splitChapterSchema.parse(input)
     const original = this.requireChapter(parsed.chapterId)
+    this.assertBookEditable(original.book_id)
     const parts = splitContentAtOffset(original.content, parsed.offset)
     const splitRatio = original.content.length === 0 ? 0 : parsed.offset / original.content.length
     const remainingRatio = Math.max(1 - splitRatio, Number.EPSILON)
@@ -2241,7 +2395,9 @@ export class StoryboundStore {
 
   mergeChapter(input: MergeChapterInput): Chapter {
     const parsed = mergeChapterSchema.parse(input)
-    const chapters = this.chapterRows(this.requireChapter(parsed.chapterId).book_id)
+    const mergeBookId = this.requireChapter(parsed.chapterId).book_id
+    this.assertBookEditable(mergeBookId)
+    const chapters = this.chapterRows(mergeBookId)
     const currentIndex = chapters.findIndex((chapter) => chapter.id === parsed.chapterId)
     const neighborIndex = parsed.direction === 'previous' ? currentIndex - 1 : currentIndex + 1
     const neighbor = chapters[neighborIndex]
@@ -2347,6 +2503,7 @@ export class StoryboundStore {
   applyDetectedSplits(chapterId: string, splits: SplitCandidate[]): ChapterSummary[] {
     const id = idSchema.parse(chapterId)
     const original = this.requireChapter(id)
+    this.assertBookEditable(original.book_id)
     const parsedSplits = z.array(splitCandidateSchema).min(1).parse(splits)
     const ordered = [...parsedSplits].sort((a, b) => a.offset - b.offset)
     if (new Set(ordered.map((split) => split.offset)).size !== ordered.length) {
@@ -3369,6 +3526,7 @@ export class StoryboundStore {
 
   async exportBookToPath(bookId: string, targetPath: string): Promise<OperationResult> {
     const id = idSchema.parse(bookId)
+    this.assertBookEditable(id)
     const book = this.getBook(id)
     const chapters = this.chapterRows(id).map((row) =>
       this.mapChapter(row, this.isChapterRead(row))
@@ -3936,7 +4094,16 @@ export class StoryboundStore {
       chapterCount: row.chapter_count,
       progressPercentage: row.progress_percentage,
       hasFinishedCurrentContent: boolean(row.has_finished_current_content),
-      isArchived: boolean(row.is_archived)
+      isArchived: boolean(row.is_archived),
+      share:
+        row.share_id && row.share_mode
+          ? {
+              shareId: row.share_id,
+              senderName: row.share_sender_name ?? '',
+              senderAddress: row.share_sender_address ?? '',
+              mode: row.share_mode
+            }
+          : null
     }
   }
 
@@ -4655,6 +4822,715 @@ export class StoryboundStore {
     return this.database
       .prepare('SELECT * FROM chapters WHERE book_id = ? AND deleted_at IS NULL ORDER BY position')
       .all(bookId) as ChapterRow[]
+  }
+
+  /** Refuses a change to a book that arrived locked. Every route to the book comes through here. */
+  assertBookEditable(bookId: string): void {
+    const mode = this.database
+      .prepare('SELECT share_mode FROM books WHERE id = ?')
+      .pluck()
+      .get(bookId)
+    if (mode === 'read-only') throw new StoryboundError('CONFLICT', READ_ONLY_MESSAGE)
+  }
+
+  private assertStoryEntityEditable(entityId: string): void {
+    this.assertBookEditable(this.requireActiveStoryEntity(entityId).book_id)
+  }
+
+  getShareSenderName(): string {
+    return String(
+      this.database.prepare('SELECT sender_name FROM share_profile WHERE id = 1').pluck().get() ??
+        ''
+    )
+  }
+
+  setShareSenderName(name: string): void {
+    this.database
+      .prepare('UPDATE share_profile SET sender_name = ? WHERE id = 1')
+      .run(name.trim().slice(0, 120))
+  }
+
+  saveShareContact(contact: ShareContactKeys): void {
+    const timestamp = now()
+    this.database
+      .prepare(
+        `INSERT INTO share_contacts (
+           address, name, encryption_public_key, signing_public_key, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(address) DO UPDATE SET name = excluded.name,
+           encryption_public_key = excluded.encryption_public_key,
+           signing_public_key = excluded.signing_public_key, updated_at = excluded.updated_at`
+      )
+      .run(
+        contact.address,
+        contact.name.trim().slice(0, 120),
+        contact.encryptionPublicKey,
+        contact.signingPublicKey,
+        timestamp,
+        timestamp
+      )
+  }
+
+  listShareContacts(): ShareContact[] {
+    return this.database
+      .prepare('SELECT address, name FROM share_contacts ORDER BY name COLLATE NOCASE')
+      .all() as ShareContact[]
+  }
+
+  getShareContact(address: string): ShareContactKeys | null {
+    const row = this.database
+      .prepare(
+        `SELECT address, name, encryption_public_key, signing_public_key
+         FROM share_contacts WHERE address = ?`
+      )
+      .get(address) as
+      | { address: string; name: string; encryption_public_key: string; signing_public_key: string }
+      | undefined
+    return row
+      ? {
+          address: row.address,
+          name: row.name,
+          encryptionPublicKey: row.encryption_public_key,
+          signingPublicKey: row.signing_public_key
+        }
+      : null
+  }
+
+  getBookShare(shareId: string): BookShareRow {
+    const row = this.database.prepare('SELECT * FROM book_shares WHERE id = ?').get(shareId) as
+      BookShareRow | undefined
+    if (!row) throw new StoryboundError('NOT_FOUND', 'That share could not be found.')
+    return row
+  }
+
+  findBookShare(bookId: string, address: string): BookShareRow | null {
+    return (
+      (this.database
+        .prepare('SELECT * FROM book_shares WHERE book_id = ? AND contact_address = ?')
+        .get(bookId, address) as BookShareRow | undefined) ?? null
+    )
+  }
+
+  /** Who this book has been sent to from this computer, and what they have not had yet. */
+  listBookShares(bookId: string): BookShare[] {
+    const id = idSchema.parse(bookId)
+    const book = this.requireBook(id)
+    const chapters = this.chapterRows(id)
+    const rows = this.database
+      .prepare(
+        `SELECT share.*, contact.name AS contact_name FROM book_shares share
+         JOIN share_contacts contact ON contact.address = share.contact_address
+         WHERE share.book_id = ? ORDER BY share.created_at`
+      )
+      .all(id) as Array<BookShareRow & { contact_name: string }>
+    return rows.map((row) => {
+      const sent = this.sentChapterHashes(row.id)
+      const newChapters = chapters.filter((chapter) => !sent.has(chapter.id)).length
+      const changedChapters = chapters.filter((chapter) => {
+        const hash = sent.get(chapter.id)
+        return hash !== undefined && hash !== sharedChapterHash(chapter.title, chapter.content)
+      }).length
+      return {
+        id: row.id,
+        bookId: id,
+        contact: { address: row.contact_address, name: row.contact_name },
+        mode: row.mode,
+        includeBible: row.include_bible === 1,
+        sequence: row.sequence,
+        lastSentAt: row.last_sent_at,
+        newChapters,
+        changedChapters,
+        removedChapters: sent.size - (chapters.length - newChapters),
+        detailsChanged:
+          row.details_hash !== sharedDetailsHash(detailsOf(book)) ||
+          row.cover_version !== book.cover_version
+      }
+    })
+  }
+
+  removeBookShare(shareId: string): void {
+    this.database.prepare('DELETE FROM book_shares WHERE id = ?').run(shareId)
+  }
+
+  private sentChapterHashes(shareId: string): Map<string, string> {
+    const rows = this.database
+      .prepare('SELECT chapter_id, content_hash FROM book_share_chapters WHERE share_id = ?')
+      .all(shareId) as Array<{ chapter_id: string; content_hash: string }>
+    return new Map(rows.map((row) => [row.chapter_id, row.content_hash]))
+  }
+
+  /** The whole book as it stands, ready to seal. Nothing personal is included. */
+  prepareSharedBook(input: {
+    bookId: string
+    shareId: string | null
+    includeBible: boolean
+    encodeCover: (path: string) => { mimeType: string; data: Buffer }
+  }): PreparedSharedBook {
+    const id = idSchema.parse(input.bookId)
+    this.assertBookEditable(id)
+    const book = this.requireBook(id)
+    const chapters = this.chapterRows(id)
+    const sent = input.shareId ? this.sentChapterHashes(input.shareId) : new Map<string, string>()
+    const share = input.shareId ? this.getBookShare(input.shareId) : null
+    const coverPath = book.cover_image_path
+      ? managedCoverPath(this.paths.media, book.cover_image_path)
+      : null
+    const cover = coverPath && existsSync(coverPath) ? input.encodeCover(coverPath) : null
+    const details = detailsOf(book)
+    const body: SharedBook = {
+      format: 'storybound-shared-book',
+      formatVersion: 1,
+      book: {
+        ...details,
+        sourceId: book.id,
+        createdAt: book.created_at,
+        baseHash: share?.details_hash ?? null
+      },
+      cover: cover
+        ? {
+            mimeType: cover.mimeType as NonNullable<SharedBook['cover']>['mimeType'],
+            data: cover.data.toString('base64')
+          }
+        : null,
+      chapters: chapters.map((chapter) => ({
+        sourceId: chapter.id,
+        title: chapter.title,
+        content: chapter.content,
+        baseHash: sent.get(chapter.id) ?? null
+      })),
+      bible: input.includeBible ? this.sharedBibleOf(id) : null
+    }
+    return {
+      body,
+      detailsHash: sharedDetailsHash(details),
+      coverVersion: book.cover_version,
+      chapterHashes: chapters.map((chapter) => ({
+        chapterId: chapter.id,
+        hash: sharedChapterHash(chapter.title, chapter.content)
+      })),
+      newChapterCount: chapters.filter((chapter) => !sent.has(chapter.id)).length,
+      title: book.title,
+      authorName: book.author_name
+    }
+  }
+
+  private sharedBibleOf(bookId: string): NonNullable<SharedBook['bible']> {
+    const entities = this.database
+      .prepare(
+        `SELECT id, entity_type, title, summary, body_markdown, details_version, details_json,
+           position FROM story_entities WHERE book_id = ? AND deleted_at IS NULL ORDER BY position`
+      )
+      .all(bookId) as Array<{
+      id: string
+      entity_type: string
+      title: string
+      summary: string
+      body_markdown: string
+      details_version: number
+      details_json: string
+      position: number
+    }>
+    const relations = this.database
+      .prepare(
+        `SELECT id, from_entity_id, to_entity_id, relationship_type, label, notes
+         FROM story_entity_relations WHERE book_id = ? AND deleted_at IS NULL`
+      )
+      .all(bookId) as Array<{
+      id: string
+      from_entity_id: string
+      to_entity_id: string
+      relationship_type: string
+      label: string
+      notes: string
+    }>
+    const links = this.database
+      .prepare(
+        `SELECT link.id, link.entity_id, link.chapter_id, link.note
+         FROM story_entity_chapters link
+         JOIN story_entities entity ON entity.id = link.entity_id
+         JOIN chapters chapter ON chapter.id = link.chapter_id
+         WHERE entity.book_id = ? AND link.deleted_at IS NULL AND entity.deleted_at IS NULL
+           AND chapter.deleted_at IS NULL`
+      )
+      .all(bookId) as Array<{ id: string; entity_id: string; chapter_id: string; note: string }>
+    return {
+      entities: entities.map((entity) => ({
+        sourceId: entity.id,
+        entityType: entity.entity_type,
+        title: entity.title,
+        summary: entity.summary,
+        bodyMarkdown: entity.body_markdown,
+        detailsVersion: entity.details_version,
+        detailsJson: entity.details_json,
+        position: entity.position
+      })),
+      relations: relations.map((relation) => ({
+        sourceId: relation.id,
+        fromSourceId: relation.from_entity_id,
+        toSourceId: relation.to_entity_id,
+        relationshipType: relation.relationship_type,
+        label: relation.label,
+        notes: relation.notes
+      })),
+      chapterLinks: links.map((link) => ({
+        sourceId: link.id,
+        entitySourceId: link.entity_id,
+        chapterSourceId: link.chapter_id,
+        note: link.note
+      }))
+    }
+  }
+
+  /** Remembers what was sent, so the next update knows what changed. */
+  recordShareSent(input: {
+    shareId: string
+    bookId: string
+    address: string
+    mode: ShareMode
+    includeBible: boolean
+    sequence: number
+    prepared: PreparedSharedBook
+  }): void {
+    const timestamp = now()
+    this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT INTO book_shares (
+             id, book_id, contact_address, mode, include_bible, sequence, details_hash,
+             cover_version, created_at, last_sent_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET mode = excluded.mode,
+             include_bible = excluded.include_bible, sequence = excluded.sequence,
+             details_hash = excluded.details_hash, cover_version = excluded.cover_version,
+             last_sent_at = excluded.last_sent_at`
+        )
+        .run(
+          input.shareId,
+          input.bookId,
+          input.address,
+          input.mode,
+          input.includeBible ? 1 : 0,
+          input.sequence,
+          input.prepared.detailsHash,
+          input.prepared.coverVersion,
+          timestamp,
+          timestamp
+        )
+      this.database.prepare('DELETE FROM book_share_chapters WHERE share_id = ?').run(input.shareId)
+      const insert = this.database.prepare(
+        'INSERT INTO book_share_chapters (share_id, chapter_id, content_hash) VALUES (?, ?, ?)'
+      )
+      for (const chapter of input.prepared.chapterHashes) {
+        insert.run(input.shareId, chapter.chapterId, chapter.hash)
+      }
+    })()
+  }
+
+  /**
+   * Puts a parcel's book into the library, or brings a shared book up to date. Reading position,
+   * highlights and notes are left alone. See SHARING_PLAN.md for what happens to each kind of
+   * change. Writes directly, because this is the one route that may change a locked book.
+   */
+  receiveSharedBook(origin: ReceivedShareOrigin, shared: SharedBook): ParcelResult {
+    const bookId = sharedEntityId(origin.shareId, shared.book.sourceId)
+    const existing = this.database
+      .prepare(
+        `SELECT id, cover_image_path, share_sender_address, share_sequence, title, subtitle,
+           series_name, series_position, author_name, blurb, status, language_code, cover_style,
+           cover_position_x, cover_position_y, share_mode
+         FROM books WHERE id = ?`
+      )
+      .get(bookId) as (ExistingSharedBook & { id: string }) | undefined
+    if (existing && existing.share_sender_address !== origin.senderAddress) {
+      throw new StoryboundError(
+        'CONFLICT',
+        'This update did not come from the person who sent you the book.'
+      )
+    }
+    const result: ParcelResult = {
+      bookId,
+      title: shared.book.title,
+      added: 0,
+      revised: 0,
+      keptYours: 0,
+      removed: 0,
+      stale: false
+    }
+    if (existing && origin.sequence <= existing.share_sequence) {
+      return { ...result, title: existing.title, stale: true }
+    }
+
+    const locked = origin.mode === 'read-only'
+    const timestamp = now()
+    const untouchedDetails =
+      existing !== undefined &&
+      (existing.share_mode === 'read-only' ||
+        sharedDetailsHash(detailsOf(existing)) === shared.book.baseHash)
+    const cover = this.prepareSharedCover(existing, shared, !existing || locked || untouchedDetails)
+
+    try {
+      this.database.transaction(() => {
+        if (!existing) this.insertSharedBook(bookId, shared, timestamp)
+        else if (locked || untouchedDetails) this.updateSharedDetails(bookId, shared, timestamp)
+
+        if (cover.filename !== undefined) {
+          this.database
+            .prepare(
+              `UPDATE books SET cover_image_path = ?, cover_version = cover_version + 1
+               WHERE id = ?`
+            )
+            .run(cover.filename, bookId)
+        }
+        this.database
+          .prepare(
+            `UPDATE books SET deleted_at = NULL, share_id = ?, share_sender_name = ?,
+               share_sender_address = ?, share_mode = ?, share_sequence = ?, updated_at = ?,
+               row_version = row_version + 1 WHERE id = ?`
+          )
+          .run(
+            origin.shareId,
+            origin.senderName,
+            origin.senderAddress,
+            origin.mode,
+            origin.sequence,
+            timestamp,
+            bookId
+          )
+
+        this.applySharedChapters(bookId, origin, shared, locked, timestamp, result)
+        if (shared.bible) this.applySharedBible(bookId, origin.shareId, shared, locked, timestamp)
+        this.refreshBook(bookId, timestamp)
+        this.recalculateReadingProgress(bookId, undefined, true)
+      })()
+    } catch (error) {
+      if (cover.filename) safeRemove(join(this.paths.media, cover.filename))
+      throw error
+    }
+    if (cover.replaced) safeRemoveManagedCover(this.paths.media, cover.replaced)
+    return result
+  }
+
+  /** Saves an incoming cover. `filename` stays undefined when the book's cover is left alone. */
+  private prepareSharedCover(
+    existing: ExistingSharedBook | undefined,
+    shared: SharedBook,
+    mayReplace: boolean
+  ): { filename?: string | null; replaced?: string } {
+    if (!mayReplace) return {}
+    const currentName = existing?.cover_image_path ?? null
+    const currentPath = currentName ? managedCoverPath(this.paths.media, currentName) : null
+    if (!shared.cover) {
+      return currentName ? { filename: null, replaced: currentName } : {}
+    }
+    const incoming = Buffer.from(shared.cover.data, 'base64')
+    if (incoming.length > MAX_COVER_BYTES) {
+      throw new StoryboundError('IMPORT_ERROR', 'The cover in this parcel is too large.')
+    }
+    if (currentPath && existsSync(currentPath) && readFileSync(currentPath).equals(incoming)) {
+      return {}
+    }
+    const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[
+      shared.cover.mimeType
+    ]
+    const filename = `${randomUUID()}${coverExtension(incoming, `cover${extension}`)}`
+    writeFileSync(join(this.paths.media, filename), incoming, { flag: 'wx' })
+    return { filename, ...(currentName ? { replaced: currentName } : {}) }
+  }
+
+  private insertSharedBook(bookId: string, shared: SharedBook, timestamp: string): void {
+    const book = shared.book
+    this.database
+      .prepare(
+        `INSERT INTO books (
+           id, title, subtitle, series_name, series_position, author_name, blurb, status,
+           language_code, cover_style, cover_position_x, cover_position_y, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        bookId,
+        book.title,
+        book.subtitle,
+        book.seriesName,
+        book.seriesPosition,
+        book.authorName,
+        book.blurb,
+        book.status,
+        book.languageCode,
+        book.coverStyle,
+        book.coverPositionX,
+        book.coverPositionY,
+        timestamp,
+        timestamp
+      )
+    this.database
+      .prepare(
+        `UPDATE book_libraries SET library_id = ?, updated_at = ?, row_version = row_version + 1
+         WHERE book_id = ?`
+      )
+      .run(this.activeLibraryId(), timestamp, bookId)
+  }
+
+  private updateSharedDetails(bookId: string, shared: SharedBook, timestamp: string): void {
+    const book = shared.book
+    this.database
+      .prepare(
+        `UPDATE books SET title = ?, subtitle = ?, series_name = ?, series_position = ?,
+           author_name = ?, blurb = ?, status = ?, language_code = ?, cover_style = ?,
+           cover_position_x = ?, cover_position_y = ?, updated_at = ? WHERE id = ?`
+      )
+      .run(
+        book.title,
+        book.subtitle,
+        book.seriesName,
+        book.seriesPosition,
+        book.authorName,
+        book.blurb,
+        book.status,
+        book.languageCode,
+        book.coverStyle,
+        book.coverPositionX,
+        book.coverPositionY,
+        timestamp,
+        bookId
+      )
+  }
+
+  private applySharedChapters(
+    bookId: string,
+    origin: ReceivedShareOrigin,
+    shared: SharedBook,
+    locked: boolean,
+    timestamp: string,
+    result: ParcelResult
+  ): void {
+    const reason = `Before update from ${origin.senderName}`
+    const incomingIds = shared.chapters.map((chapter) =>
+      sharedEntityId(origin.shareId, chapter.sourceId)
+    )
+    const firstFree = Number(
+      this.database
+        .prepare('SELECT COALESCE(MAX(position), -1) + 1 FROM chapters WHERE book_id = ?')
+        .pluck()
+        .get(bookId)
+    )
+    shared.chapters.forEach((chapter, index) => {
+      const id = incomingIds[index]
+      const row = this.database.prepare('SELECT * FROM chapters WHERE id = ?').get(id) as
+        ChapterRow | undefined
+      if (!row) {
+        this.database
+          .prepare(
+            `INSERT INTO chapters (
+               id, book_id, title, content, position, created_at, updated_at, word_count
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            id,
+            bookId,
+            chapter.title,
+            chapter.content,
+            firstFree + index,
+            timestamp,
+            timestamp,
+            countWords(chapter.content)
+          )
+        result.added += 1
+        return
+      }
+      // A chapter the recipient of an editable book moved to Trash stays there.
+      if (row.deleted_at && !locked) return
+      const changed = row.title !== chapter.title || row.content !== chapter.content
+      if (!changed) {
+        if (row.deleted_at) this.undeleteSharedChapter(id, timestamp)
+        return
+      }
+      const untouched = locked || sharedChapterHash(row.title, row.content) === chapter.baseHash
+      if (!untouched) {
+        // Their edit stays, and the sender's version is kept for them under Revisions.
+        this.saveChapterRevisionFor(
+          id,
+          {
+            ...row,
+            title: chapter.title,
+            content: chapter.content,
+            word_count: countWords(chapter.content)
+          },
+          `Update from ${origin.senderName}`
+        )
+        result.keptYours += 1
+        return
+      }
+      this.saveChapterRevision(row, reason)
+      this.database
+        .prepare(
+          `UPDATE chapters SET title = ?, content = ?, word_count = ?, updated_at = ?,
+             deleted_at = NULL, row_version = row_version + 1 WHERE id = ?`
+        )
+        .run(chapter.title, chapter.content, countWords(chapter.content), timestamp, id)
+      if (chapter.content.length > row.content.length) {
+        this.database
+          .prepare(
+            `UPDATE reading_states SET scroll_position = scroll_position * ?,
+               has_finished_current_content = 0 WHERE chapter_id = ?`
+          )
+          .run(row.content.length / chapter.content.length, id)
+      }
+      result.revised += 1
+    })
+
+    const incoming = new Set(incomingIds)
+    const others = this.chapterRows(bookId).filter((chapter) => !incoming.has(chapter.id))
+    if (locked) {
+      for (const chapter of others) {
+        this.saveChapterRevision(chapter, `Removed by ${origin.senderName}`)
+        this.database
+          .prepare(
+            `UPDATE chapters SET deleted_at = ?, trashed_from_position = position, updated_at = ?,
+               row_version = row_version + 1 WHERE id = ?`
+          )
+          .run(timestamp, timestamp, chapter.id)
+        result.removed += 1
+      }
+    }
+    const active = new Set(this.chapterRows(bookId).map((chapter) => chapter.id))
+    const order = [
+      ...incomingIds.filter((id) => active.has(id)),
+      ...(locked ? [] : others.map((chapter) => chapter.id))
+    ]
+    this.setChapterOrder(bookId, order)
+    if (result.removed > 0) {
+      this.database
+        .prepare(
+          `UPDATE reading_states SET chapter_id = ?, scroll_position = 0,
+             has_finished_current_content = 0
+           WHERE book_id = ? AND chapter_id IN (
+             SELECT id FROM chapters WHERE book_id = ? AND deleted_at IS NOT NULL
+           )`
+        )
+        .run(order[0] ?? null, bookId, bookId)
+    }
+  }
+
+  private undeleteSharedChapter(id: string, timestamp: string): void {
+    this.database
+      .prepare(
+        `UPDATE chapters SET deleted_at = NULL, updated_at = ?, row_version = row_version + 1
+         WHERE id = ?`
+      )
+      .run(timestamp, id)
+  }
+
+  /** A locked book's bible mirrors the sender's. An editable book only gains new entries. */
+  private applySharedBible(
+    bookId: string,
+    shareId: string,
+    shared: SharedBook,
+    locked: boolean,
+    timestamp: string
+  ): void {
+    const bible = shared.bible
+    if (!bible) return
+    const entityId = (sourceId: string): string => sharedEntityId(shareId, sourceId)
+    const exists = (table: string, id: string): boolean =>
+      Boolean(this.database.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id))
+
+    for (const entity of bible.entities) {
+      const id = entityId(entity.sourceId)
+      if (!exists('story_entities', id)) {
+        this.database
+          .prepare(
+            `INSERT INTO story_entities (
+               id, book_id, entity_type, title, summary, body_markdown, details_version,
+               details_json, position, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            id,
+            bookId,
+            entity.entityType,
+            entity.title,
+            entity.summary,
+            entity.bodyMarkdown,
+            entity.detailsVersion,
+            entity.detailsJson,
+            entity.position,
+            timestamp,
+            timestamp
+          )
+      } else if (locked) {
+        this.database
+          .prepare(
+            `UPDATE story_entities SET entity_type = ?, title = ?, summary = ?, body_markdown = ?,
+               details_version = ?, details_json = ?, position = ?, updated_at = ?,
+               deleted_at = NULL, row_version = row_version + 1 WHERE id = ?`
+          )
+          .run(
+            entity.entityType,
+            entity.title,
+            entity.summary,
+            entity.bodyMarkdown,
+            entity.detailsVersion,
+            entity.detailsJson,
+            entity.position,
+            timestamp,
+            id
+          )
+      }
+    }
+    if (locked) {
+      const kept = new Set(bible.entities.map((entity) => entityId(entity.sourceId)))
+      const active = this.database
+        .prepare('SELECT id FROM story_entities WHERE book_id = ? AND deleted_at IS NULL')
+        .pluck()
+        .all(bookId) as string[]
+      for (const id of active.filter((candidate) => !kept.has(candidate))) {
+        this.database
+          .prepare(
+            `UPDATE story_entities SET deleted_at = ?, updated_at = ?,
+               row_version = row_version + 1 WHERE id = ?`
+          )
+          .run(timestamp, timestamp, id)
+      }
+    }
+    for (const relation of bible.relations) {
+      const id = entityId(relation.sourceId)
+      const from = entityId(relation.fromSourceId)
+      const to = entityId(relation.toSourceId)
+      if (exists('story_entity_relations', id)) continue
+      if (!exists('story_entities', from) || !exists('story_entities', to)) continue
+      this.database
+        .prepare(
+          `INSERT INTO story_entity_relations (
+             id, book_id, from_entity_id, to_entity_id, relationship_type, label, notes,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          bookId,
+          from,
+          to,
+          relation.relationshipType,
+          relation.label,
+          relation.notes,
+          timestamp,
+          timestamp
+        )
+    }
+    for (const link of bible.chapterLinks) {
+      const id = entityId(link.sourceId)
+      const entity = entityId(link.entitySourceId)
+      const chapter = entityId(link.chapterSourceId)
+      if (exists('story_entity_chapters', id)) continue
+      if (!exists('story_entities', entity) || !exists('chapters', chapter)) continue
+      this.database
+        .prepare(
+          `INSERT INTO story_entity_chapters (
+             id, entity_id, chapter_id, note, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(id, entity, chapter, link.note, timestamp, timestamp)
+    }
   }
 
   private saveChapterRevision(chapter: ChapterRow, reason: string): void {

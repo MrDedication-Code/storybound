@@ -7,6 +7,7 @@ import {
   createVaultKey,
   createWrappingKeyPair,
   deriveDeviceWrappingKey,
+  deriveSharingIdentity,
   deviceLinkWords,
   parseDeviceLinkRequests,
   recoveryVerifier,
@@ -32,6 +33,7 @@ import { ElectronCredentialProtector } from './electronProtector'
 import { SecureCredentialStorage } from './secureCredentials'
 import { encodeCoverForSync } from './coverEncoder'
 import { createStoryboundSupabaseClient } from './supabaseClient'
+import type { SharingAccess } from './sharingController'
 import { SupabaseSyncProvider } from './supabaseProvider'
 
 const VAULT_CREDENTIAL_KEY = 'storybound.vault.v1'
@@ -506,6 +508,24 @@ export class StoryboundSyncController {
       throw new StoryboundError('SECURITY_ERROR', 'Unlock sync with the recovery code first.')
     }
     return this.engine.resolveConflict(conflictId, resolution)
+  }
+
+  /** What sharing needs: null until sync is on and unlocked on this device. */
+  async sharingAccess(): Promise<SharingAccess | null> {
+    if (!this.client) return null
+    const { data } = await this.client.auth.getSession()
+    if (!data.session) return null
+    const credentials = await this.readVaultCredentials(data.session.user.id)
+    if (!credentials) return null
+    return {
+      client: this.client,
+      deviceId: credentials.deviceId,
+      deviceToken: credentials.deviceToken,
+      identity: deriveSharingIdentity(
+        new Uint8Array(Buffer.from(credentials.vaultKey, 'base64')),
+        credentials.vaultId
+      )
+    }
   }
 
   private requireClient(): SupabaseClient {

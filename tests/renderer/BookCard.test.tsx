@@ -35,7 +35,8 @@ describe('BookCard', () => {
           ...book,
           coverImageUrl: 'storybound-media://covers/cover.webp',
           coverPositionX: 18,
-          coverPositionY: 82
+          coverPositionY: 82,
+          share: null
         }}
         onEdit={vi.fn()}
         onOpen={vi.fn()}

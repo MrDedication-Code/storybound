@@ -724,9 +724,11 @@ export function ReaderPage({
         <BookOpen size={34} />
         <h1>{book.title}</h1>
         <p>This book does not have a chapter to read yet.</p>
-        <Button variant="primary" onClick={() => navigate(routes.editor(book.id))}>
-          Add first chapter
-        </Button>
+        {book.share?.mode !== 'read-only' ? (
+          <Button variant="primary" onClick={() => navigate(routes.editor(book.id))}>
+            Add first chapter
+          </Button>
+        ) : null}
       </main>
     )
 

@@ -142,6 +142,10 @@ export function EditorPage({ bookId, chapterId, notify }: EditorPageProps): Reac
         recoveryPromise
       ])
       const nextBook = unwrap(bookResult)
+      if (nextBook.share?.mode === 'read-only') {
+        navigate(routes.book(bookId), { replace: true, bypassGuard: true })
+        return
+      }
       setBook(nextBook)
       setBookTitle(nextBook.title)
       setBookBlurb(nextBook.blurb)

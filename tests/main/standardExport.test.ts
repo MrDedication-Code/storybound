@@ -54,6 +54,7 @@ function fixture(): StandardExportInput {
     coverStyle: 'classic',
     coverPositionX: 50,
     coverPositionY: 50,
+    share: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     lastOpenedAt: null,

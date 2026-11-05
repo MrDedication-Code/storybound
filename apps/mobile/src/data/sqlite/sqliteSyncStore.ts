@@ -701,6 +701,12 @@ export class SQLiteSyncStore {
           requiredValue(value, 'row_version')
         ]
       )
+      if ('share_mode' in value) {
+        await transaction.runAsync(
+          'UPDATE books SET share_sender_name = ?, share_mode = ? WHERE id = ?',
+          [value.share_sender_name, value.share_mode, change.entityId]
+        )
+      }
       return
     }
 

@@ -259,6 +259,107 @@ export function SyncGuide(): React.JSX.Element {
   )
 }
 
+export function SendingGuide(): React.JSX.Element {
+  return (
+    <div className="help-topic">
+      <p>
+        Send a book to someone else’s Storybound, wrapped in brown paper. It goes privately: it is
+        sealed on your computer so that only they can open it. You both need sync turned on, and
+        sending and unwrapping happen on a computer.
+      </p>
+
+      <h3>Find your address</h3>
+      <ol>
+        <li>
+          Open <strong>Settings</strong>, then <strong>Sync &amp; devices</strong>.
+        </li>
+        <li>
+          Under <strong>Your Storybound address</strong>, click <strong>Copy</strong>. It looks like{' '}
+          <code>K7QM-2XPD-9RTA-HF4W</code>.
+        </li>
+        <li>
+          Give it to the person who wants to send you a book. It is safe to share, and they send you
+          theirs the same way.
+        </li>
+      </ol>
+
+      <h3>Send a book</h3>
+      <ol>
+        <li>
+          Open the book and click <strong>Send to someone</strong>.
+        </li>
+        <li>Type your name, their name, and their Storybound address.</li>
+        <li>
+          Choose <strong>Read only</strong> if they should only read it, or{' '}
+          <strong>Editable</strong> to give them their own copy to change.
+        </li>
+        <li>
+          Decide about the story bible. It is off for read-only books because it can spoil what
+          happens next.
+        </li>
+        <li>
+          Click <strong>Wrap and send</strong>.
+        </li>
+      </ol>
+      <p>
+        Your highlights, notes, bookmarks, reading position and revision history are never sent.
+      </p>
+
+      <h3>Receive a book</h3>
+      <ol>
+        <li>
+          A parcel appears in the corner of Storybound. Click it, then click the parcel to unwrap
+          it.
+        </li>
+        <li>Drag the book to turn it, and scroll to zoom in.</li>
+        <li>
+          Click <strong>Collect</strong> to add it to your library, or <strong>Decline</strong> to
+          send it away. It reaches your phone through sync.
+        </li>
+      </ol>
+
+      <h3>Send more chapters</h3>
+      <ol>
+        <li>
+          Open the book. Under <strong>Who has this book</strong> you can see what they have not had
+          yet.
+        </li>
+        <li>
+          Click <strong>Send update</strong>. Nothing goes until you do, so unfinished chapters stay
+          with you.
+        </li>
+      </ol>
+      <p>
+        They get a small parcel and click <strong>Add to my book</strong>. Their place, highlights
+        and notes stay as they are.
+      </p>
+
+      <h3>Good to know</h3>
+      <ul>
+        <li>
+          <strong>Read only:</strong> they can read, highlight, take notes and listen, but neither
+          they nor Claude can change or export it. It is a lock, not perfect protection, because the
+          words are on their device.
+        </li>
+        <li>
+          <strong>Editable:</strong> their copy is their own. If they changed a chapter you later
+          revise, they keep theirs and your version goes under Revisions.
+        </li>
+        <li>
+          <strong>Unopened parcels:</strong> they wait for 30 days, then disappear. Just send again.
+        </li>
+        <li>
+          <strong>Updates:</strong> send them from the computer that sent the book.
+        </li>
+        <li>
+          <strong>Phones:</strong> they show shared books and keep them locked, but parcels are
+          opened on a computer.
+        </li>
+      </ul>
+    </div>
+  )
+}
+
 export function ListeningGuide(): React.JSX.Element {
   return (
     <div className="help-topic">

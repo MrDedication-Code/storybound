@@ -850,6 +850,57 @@ export const migrations: readonly Migration[] = [
         CHECK(cover_version >= 0);
       UPDATE books SET cover_version = 1 WHERE cover_image_path IS NOT NULL;
     `
+  },
+  {
+    version: 13,
+    name: 'shared-books',
+    // The share_ columns mark a book that arrived as a parcel, and travel with it through sync.
+    // The other tables record what this computer has sent, so an update can say what changed.
+    sql: `
+      ALTER TABLE books ADD COLUMN share_id TEXT;
+      ALTER TABLE books ADD COLUMN share_sender_name TEXT;
+      ALTER TABLE books ADD COLUMN share_sender_address TEXT;
+      ALTER TABLE books ADD COLUMN share_mode TEXT
+        CHECK(share_mode IS NULL OR share_mode IN ('read-only', 'editable'));
+      ALTER TABLE books ADD COLUMN share_sequence INTEGER NOT NULL DEFAULT 0
+        CHECK(share_sequence >= 0);
+
+      CREATE TABLE share_contacts (
+        address TEXT PRIMARY KEY,
+        name TEXT NOT NULL CHECK(length(trim(name)) > 0),
+        encryption_public_key TEXT NOT NULL,
+        signing_public_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE book_shares (
+        id TEXT PRIMARY KEY,
+        book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        contact_address TEXT NOT NULL REFERENCES share_contacts(address),
+        mode TEXT NOT NULL CHECK(mode IN ('read-only', 'editable')),
+        include_bible INTEGER NOT NULL DEFAULT 0 CHECK(include_bible IN (0, 1)),
+        sequence INTEGER NOT NULL DEFAULT 0 CHECK(sequence >= 0),
+        details_hash TEXT,
+        cover_version INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        last_sent_at TEXT NOT NULL,
+        UNIQUE(book_id, contact_address)
+      );
+
+      CREATE TABLE book_share_chapters (
+        share_id TEXT NOT NULL REFERENCES book_shares(id) ON DELETE CASCADE,
+        chapter_id TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        PRIMARY KEY (share_id, chapter_id)
+      );
+
+      CREATE TABLE share_profile (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        sender_name TEXT NOT NULL DEFAULT ''
+      );
+      INSERT INTO share_profile (id, sender_name) VALUES (1, '');
+    `
   }
 ]
 

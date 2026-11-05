@@ -11,6 +11,7 @@ export default defineConfig(
       '**/node_modules',
       '**/dist',
       '**/out',
+      'supabase/.temp',
       'apps/mobile/android',
       'apps/mobile/ios',
       'apps/mobile/modules/*/android'

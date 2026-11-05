@@ -45,9 +45,9 @@ export function BookDetailScreen({
   /** Omitted in reader mode, which hides every edit control. */
   onEditChapter?: (chapterId: string) => void
 }): React.JSX.Element {
-  const editing = Boolean(onEditChapter)
   const { width: windowWidth } = useWindowDimensions()
   const [book, setBook] = useState<BookDetail | null>(null)
+  const editing = Boolean(onEditChapter) && book?.shareMode !== 'read-only'
   const [reading, setReading] = useState<ReadingState | null>(null)
   const [trashedCount, setTrashedCount] = useState(0)
   const [error, setError] = useState('')
@@ -233,6 +233,12 @@ export function BookDetailScreen({
             <Text style={styles.title}>{book.title}</Text>
             {book.subtitle ? <Text style={styles.subtitle}>{book.subtitle}</Text> : null}
             <Text style={styles.author}>{book.authorName || 'Unknown author'}</Text>
+            {book.shareSenderName ? (
+              <Text style={styles.subtitle}>
+                From {book.shareSenderName}
+                {book.shareMode === 'read-only' ? ' · Read only' : ''}
+              </Text>
+            ) : null}
             {book.seriesName ? (
               <Text style={styles.series}>
                 {book.seriesName}

@@ -10,6 +10,8 @@ import {
   Copy,
   Download,
   Edit3,
+  Package,
+  Send,
   Heart,
   ImagePlus,
   MapPinned,
@@ -23,6 +25,8 @@ import {
   Users,
   X
 } from 'lucide-react'
+import { BookSharing } from '../components/parcel/BookSharing'
+import { ShareBookModal } from '../components/parcel/ShareBookModal'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type {
   Bookmark as BookmarkType,
@@ -114,6 +118,8 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
   const [metadataTagIds, setMetadataTagIds] = useState<string[]>([])
   const [metadataCollectionIds, setMetadataCollectionIds] = useState<string[]>([])
   const [exportOpen, setExportOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareRefresh, setShareRefresh] = useState(0)
   const [coverStudio, setCoverStudio] = useState<CoverStudioDraft | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -507,6 +513,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
       </div>
     )
 
+  const locked = book.share?.mode === 'read-only'
   const firstChapter = book.chapters[0]
   const continueChapterId = reading?.chapterId ?? firstChapter?.id
   const visibleStoryEntities = storyEntities.filter(
@@ -532,7 +539,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
             size="hero"
             title={book.title}
           />
-          <div className="cover-actions">
+          <div className="cover-actions" hidden={locked}>
             <Button icon={ImagePlus} onClick={() => void chooseCover()}>
               {book.coverImageUrl ? 'Replace cover' : 'Choose cover'}
             </Button>
@@ -558,6 +565,13 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
             {book.status === 'completed' ? <Check size={14} /> : <MoreHorizontal size={14} />}
             {book.status === 'completed' ? 'Completed' : 'Ongoing'}
           </span>
+          {book.share ? (
+            <p className="book-share-origin">
+              <Package aria-hidden="true" size={15} />
+              From {book.share.senderName}
+              {locked ? ' · Read only' : ' · Your own copy'}
+            </p>
+          ) : null}
           <h1>{book.title}</h1>
           {book.subtitle ? <p className="book-subtitle">{book.subtitle}</p> : null}
           {book.seriesName ? (
@@ -608,15 +622,27 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
             >
               Read from beginning
             </Button>
-            <Button icon={Edit3} onClick={() => navigate(routes.editor(book.id, firstChapter?.id))}>
-              Edit book
-            </Button>
+            {!locked ? (
+              <Button
+                icon={Edit3}
+                onClick={() => navigate(routes.editor(book.id, firstChapter?.id))}
+              >
+                Edit book
+              </Button>
+            ) : null}
+            {!locked ? (
+              <Button icon={Send} onClick={() => setShareOpen(true)}>
+                Send to someone
+              </Button>
+            ) : null}
           </div>
           <div className="hero-secondary-actions">
-            <button onClick={openMetadata}>
-              <PencilLine size={15} />
-              Edit details
-            </button>
+            {!locked ? (
+              <button onClick={openMetadata}>
+                <PencilLine size={15} />
+                Edit details
+              </button>
+            ) : null}
             <button
               aria-pressed={book.isFavourite}
               onClick={async () => {
@@ -637,13 +663,17 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
               <Heart size={15} />
               {book.isFavourite ? 'Remove favourite' : 'Add to favourites'}
             </button>
-            <button onClick={() => void updateStatus()}>
-              {book.status === 'ongoing' ? 'Mark completed' : 'Mark ongoing'}
-            </button>
-            <button onClick={() => setExportOpen(true)}>
-              <Download size={15} />
-              Export book
-            </button>
+            {!locked ? (
+              <button onClick={() => void updateStatus()}>
+                {book.status === 'ongoing' ? 'Mark completed' : 'Mark ongoing'}
+              </button>
+            ) : null}
+            {!locked ? (
+              <button onClick={() => setExportOpen(true)}>
+                <Download size={15} />
+                Export book
+              </button>
+            ) : null}
             <button className="text-danger" onClick={() => setConfirm({ kind: 'book' })}>
               <Archive size={15} />
               Move to Trash
@@ -679,7 +709,11 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
             <p className="eyebrow">Reference and continuity</p>
             <h2 id="story-bible-heading">Story bible & timeline</h2>
           </div>
-          <Button icon={Plus} onClick={() => setStoryEntityForm({ ...EMPTY_STORY_ENTITY })}>
+          <Button
+            hidden={locked}
+            icon={Plus}
+            onClick={() => setStoryEntityForm({ ...EMPTY_STORY_ENTITY })}
+          >
             Add entry
           </Button>
         </div>
@@ -718,7 +752,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
                 </span>
                 <h3>{entity.title}</h3>
                 <p>{entity.summary || 'No summary yet.'}</p>
-                <div>
+                <div hidden={locked}>
                   <button onClick={() => editStoryEntity(entity)}>Edit</button>
                   <button
                     className="text-danger"
@@ -751,6 +785,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
                     <span>{relation.relationshipType}</span>
                     <strong>{storyEntityNames.get(relation.toEntityId)}</strong>
                     <IconButton
+                      hidden={locked}
                       icon={X}
                       label="Remove story relationship"
                       onClick={async () => {
@@ -766,7 +801,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
                 ))}
               </ul>
             ) : null}
-            <form onSubmit={(event) => void createStoryRelation(event)}>
+            <form hidden={locked} onSubmit={(event) => void createStoryRelation(event)}>
               <select
                 aria-label="Relationship source"
                 required
@@ -810,13 +845,15 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
         ) : null}
       </section>
 
+      <BookSharing bookId={book.id} notify={notify} refreshKey={shareRefresh} />
+
       <section className="content-section" aria-labelledby="chapters-heading">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Contents</p>
             <h2 id="chapters-heading">Chapters</h2>
           </div>
-          <Button icon={Plus} onClick={() => navigate(routes.editor(book.id))}>
+          <Button hidden={locked} icon={Plus} onClick={() => navigate(routes.editor(book.id))}>
             Add chapter
           </Button>
         </div>
@@ -835,7 +872,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
                     · {chapter.isRead ? 'Read' : 'Unread'}
                   </span>
                 </button>
-                <div className="chapter-list__actions">
+                <div className="chapter-list__actions" hidden={locked}>
                   <IconButton
                     disabled={index === 0}
                     icon={ArrowUp}
@@ -1277,6 +1314,16 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
         </Modal>
       ) : null}
 
+      {shareOpen ? (
+        <ShareBookModal
+          book={book}
+          onClose={() => setShareOpen(false)}
+          onSent={() => {
+            setShareOpen(false)
+            setShareRefresh((current) => current + 1)
+          }}
+        />
+      ) : null}
       {exportOpen ? (
         <Modal
           description="Choose a reading or archive format. Every option is created locally."

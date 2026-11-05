@@ -4432,3 +4432,308 @@ kbd {
   padding: 6px 12px;
   font-size: 12px;
 }
+
+/* Controls that a locked book hides, whatever display their own rules set. */
+[hidden] {
+  display: none !important;
+}
+
+/* Parcels: a book arriving, unwrapping, and being sent. */
+.parcel-chip {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(340px, calc(100vw - 44px));
+  padding: 11px 16px 11px 11px;
+  border: 1px solid #8a6840;
+  border-radius: 10px;
+  color: #33210f;
+  background: #d9b98c;
+  box-shadow: 0 14px 34px rgb(30 18 8 / 32%);
+  text-align: left;
+  cursor: pointer;
+  animation: parcel-chip-in 520ms cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.parcel-chip:hover {
+  background: #e2c59b;
+}
+.parcel-chip__box {
+  display: grid;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 7px;
+  background: #b48a5a;
+}
+.parcel-chip strong,
+.parcel-chip small {
+  display: block;
+}
+.parcel-chip strong {
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.25;
+}
+.parcel-chip small {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #5d452c;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes parcel-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.92);
+  }
+}
+.parcel-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #f4ecdf;
+  background: radial-gradient(circle at 50% 42%, #5a4632 0%, #2c2118 58%, #17110c 100%);
+  animation: parcel-stage-in 280ms ease-out;
+}
+@keyframes parcel-stage-in {
+  from {
+    opacity: 0;
+  }
+}
+.parcel-stage__header,
+.parcel-stage__footer {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.parcel-stage__footer button,
+.parcel-stage__footer [role='alert'] {
+  pointer-events: auto;
+}
+.parcel-stage__header {
+  padding: 30px 72px 6px;
+  text-align: center;
+}
+.parcel-stage__header .eyebrow {
+  color: #d4b58a;
+}
+.parcel-stage__header h2 {
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: clamp(24px, 3.4vw, 36px);
+  font-weight: 500;
+  line-height: 1.15;
+}
+.parcel-stage__header p:last-child {
+  min-height: 21px;
+  margin-top: 6px;
+  color: #cdbba3;
+  font-size: 14px;
+}
+.parcel-stage__close {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  z-index: 2;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #e7dac6;
+  background: rgb(255 255 255 / 8%);
+  cursor: pointer;
+}
+.parcel-stage__close:hover {
+  background: rgb(255 255 255 / 16%);
+}
+.parcel-stage__scene {
+  position: absolute;
+  inset: 0;
+}
+.parcel-stage__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+}
+.parcel-stage__canvas:active {
+  cursor: grabbing;
+}
+.parcel-stage__canvas.is-wrapped {
+  cursor: pointer;
+}
+.parcel-stage__flat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  height: 100%;
+  padding: 16px 40px;
+}
+.parcel-stage__flat p {
+  max-width: 380px;
+  color: #e7dac6;
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.parcel-stage__footer {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  min-height: 84px;
+  padding: 8px 24px 26px;
+}
+.parcel-stage__hint {
+  color: #cdbba3;
+  font-size: 13px;
+  text-align: center;
+}
+.parcel-stage__actions {
+  display: flex;
+  gap: 10px;
+}
+.parcel-update__note {
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.share-form {
+  display: grid;
+  gap: 14px;
+}
+.share-form label > span,
+.share-form legend {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+.share-form input[type='text'],
+.share-form input:not([type]),
+.share-form select {
+  width: 100%;
+}
+.share-form .switch-row > span {
+  margin: 0;
+}
+.share-form .switch-row strong,
+.share-form .switch-row small {
+  display: block;
+}
+.share-form .switch-row small {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+.share-form__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+}
+.share-form__modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  border: 0;
+}
+.share-form__modes legend {
+  grid-column: 1 / -1;
+}
+.share-form__modes label {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+.share-form__modes label.is-chosen {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.share-form__modes input {
+  position: absolute;
+  opacity: 0;
+}
+.share-form__modes label:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.share-form__modes label span {
+  margin: 0;
+}
+.share-form__modes strong,
+.share-form__modes small {
+  display: block;
+}
+.share-form__modes small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.share-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.share-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.share-list li > span {
+  flex: 1;
+  min-width: 0;
+}
+.share-list strong,
+.share-list small {
+  display: block;
+}
+.share-list small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.book-share-origin {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.share-address {
+  padding: 8px 12px;
+  border-radius: 7px;
+  background: var(--surface-raised);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .parcel-chip,
+  .parcel-stage {
+    animation: none;
+  }
+}

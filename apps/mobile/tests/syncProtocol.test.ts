@@ -217,6 +217,40 @@ describe('live RPC validation', () => {
 })
 
 describe('desktop-compatible entity mapping', () => {
+  it('carries a shared book’s lock, and an older record leaves it alone', () => {
+    const book = {
+      id: 'book-1',
+      title: 'Shared',
+      blurb: '',
+      status: 'ongoing',
+      created_at: '2026-11-05T00:00:00.000Z',
+      updated_at: '2026-11-05T00:00:00.000Z',
+      total_word_count: 0,
+      is_archived: 0,
+      row_version: 2,
+      subtitle: '',
+      author_name: '',
+      language_code: '',
+      source_label: '',
+      source_url: '',
+      personal_notes: '',
+      series_name: '',
+      cover_style: 'classic',
+      cover_position_x: 50,
+      cover_position_y: 50
+    }
+    const shared = normalizeRemoteEntity('book', 'book-1', {
+      ...book,
+      share_sender_name: 'Jack',
+      share_mode: 'read-only'
+    })
+    expect(shared.values).toMatchObject({ share_sender_name: 'Jack', share_mode: 'read-only' })
+    expect(normalizeRemoteEntity('book', 'book-1', book).values).not.toHaveProperty('share_mode')
+    expect(() => normalizeRemoteEntity('book', 'book-1', { ...book, share_mode: 'x' })).toThrow(
+      'share details'
+    )
+  })
+
   it('normalizes the full book payload and derives the mobile cover tone', () => {
     const normalized = normalizeRemoteEntity('book', 'book-1', {
       id: 'book-1',

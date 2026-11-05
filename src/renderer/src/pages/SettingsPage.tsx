@@ -37,6 +37,7 @@ import type {
 import { readableError, storyboundApi, unwrap } from '../lib/api'
 import { AssistantSettings } from '../components/AssistantSettings'
 import { ListeningSettings } from '../components/ListeningSettings'
+import { SharingAddress } from '../components/SharingAddress'
 import {
   Button,
   ConfirmDialog,
@@ -902,6 +903,9 @@ export function SettingsPage({
                 ))}
               </div>
             )}
+            {syncStatus?.phase === 'idle' || syncStatus?.phase === 'error' ? (
+              <SharingAddress notify={notify} />
+            ) : null}
             {newRecoveryCode ? (
               <InlineNotice tone="success">
                 Save this recovery code somewhere private. Storybound cannot recover encrypted books

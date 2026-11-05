@@ -96,6 +96,18 @@ const BOOK_COLUMNS = [
 ] as const
 
 /**
+ * Who a shared book came from, and whether it is locked. They are optional in a book record so
+ * that a record from an older version, which knows nothing of them, leaves them as they are.
+ */
+const BOOK_SHARE_COLUMNS = [
+  'share_id',
+  'share_sender_name',
+  'share_sender_address',
+  'share_mode',
+  'share_sequence'
+] as const
+
+/**
  * Book payloads name their library. Books do not store it themselves (book_libraries does), so a
  * future "move to library" must also bump the book's row_version for the move to sync.
  * Payloads from older versions lack it and fall back to the profile's library.
@@ -214,7 +226,8 @@ export function listLocalSyncEntities(
     .all() as Array<Record<string, unknown>>
   const books = database
     .prepare(
-      `SELECT ${selectColumns(BOOK_COLUMNS, 'b')}, bl.library_id AS ${BOOK_LIBRARY_KEY}
+      `SELECT ${selectColumns([...BOOK_COLUMNS, ...BOOK_SHARE_COLUMNS], 'b')},
+         bl.library_id AS ${BOOK_LIBRARY_KEY}
        FROM books b
        JOIN book_libraries bl ON bl.book_id = b.id`
     )
@@ -663,6 +676,45 @@ function localEntity(
   }
 }
 
+function applyBookShare(
+  database: Database.Database,
+  bookId: string,
+  value: Record<string, unknown>
+): void {
+  if (!('share_mode' in value)) return
+  const text = (key: string): string | null => {
+    const field = value[key]
+    if (field === null || field === undefined) return null
+    if (typeof field !== 'string' || field.length > 240) {
+      throw new StoryboundError('VALIDATION_ERROR', `The synced ${key} is invalid.`)
+    }
+    return field
+  }
+  const mode = text('share_mode')
+  const sequence = value.share_sequence ?? 0
+  if (
+    (mode !== null && mode !== 'read-only' && mode !== 'editable') ||
+    typeof sequence !== 'number' ||
+    !Number.isInteger(sequence) ||
+    sequence < 0
+  ) {
+    throw new StoryboundError('VALIDATION_ERROR', 'The synced share details are invalid.')
+  }
+  database
+    .prepare(
+      `UPDATE books SET share_id = ?, share_sender_name = ?, share_sender_address = ?,
+         share_mode = ?, share_sequence = ? WHERE id = ?`
+    )
+    .run(
+      text('share_id'),
+      text('share_sender_name'),
+      text('share_sender_address'),
+      mode,
+      sequence,
+      bookId
+    )
+}
+
 export function applyLocalSyncEntity(
   database: Database.Database,
   libraryId: string,
@@ -721,6 +773,7 @@ export function applyLocalSyncEntity(
       )
       .run(targetLibraryId, new Date(0).toISOString(), new Date(0).toISOString())
     upsert(database, 'books', row, BOOK_COLUMNS, 'id')
+    applyBookShare(database, entityId, value)
     const now = requireString(row, 'updated_at')
     database
       .prepare(

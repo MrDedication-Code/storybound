@@ -46,6 +46,9 @@ describe('HelpModal', () => {
     expect(screen.getByText('Create new encrypted vault')).toBeVisible()
     expect(screen.getAllByText('Link to my computer').length).toBeGreaterThan(0)
 
+    await user.click(screen.getByRole('tab', { name: 'Send a book' }))
+    expect(screen.getByText('Wrap and send')).toBeVisible()
+
     await user.click(screen.getByRole('tab', { name: 'Listening' }))
     expect(screen.getByRole('link', { name: 'aistudio.google.com/apikey' })).toBeVisible()
     expect(screen.getByText('Set up billing')).toBeVisible()

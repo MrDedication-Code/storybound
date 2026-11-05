@@ -44,6 +44,16 @@ That request contains the current chapter, limited book title/blurb context, and
 
 Closing the assistant discards the API key from renderer state. Storybound does not retain the key for the next request. Network metadata may still be processed by the operating system, internet provider, and OpenAI as required to deliver the explicitly requested call; `store: false` is not a promise that no service-side security or legal processing can occur.
 
+## Sending a book to someone
+
+Nothing is sent unless the user chooses **Send to someone** on a book. It needs sync to be on.
+
+Each account has a Storybound address, which is a fingerprint of public keys derived from its vault key. Publishing those public keys lets other people send to that address. The server finds an address only by exact match, so nobody can browse or search for who has an account, and no email address is ever shown to anyone.
+
+A parcel is encrypted on the sender's device for the recipient and signed by the sender. It holds the book's title, details, cover and chapters, and its story bible if the sender includes it. It never holds highlights, notes, bookmarks, reading position, revision history, ratings or personal notes. The server stores only the sealed parcel, the recipient's address, the sender's account identifier, and dates. It cannot read the sender's name, the title or the text. A parcel is deleted when it is accepted or declined, or after 30 days.
+
+A read-only book cannot be changed or exported through Storybound or Claude, but the text is on the recipient's device, so this is a lock rather than a guarantee that the words can never be copied. Sending a book gives someone a copy that cannot be recalled. **Stop sending updates** ends future updates only.
+
 ## Optional Google voice for listening
 
 Listening uses the computer's or phone's own voice unless the user chooses the Google voice in **Settings → Listening**. That requires the user's own Google API key and an explicit agreement that chapter text is sent to Google. When the Google voice is in use, each passage being listened to is sent to Google's Gemini text-to-speech service with the chosen voice and reading style, directly from the device; nothing else from the library is sent. Google processes it under the terms of the user's own Google account. On Google's paid tier Google does not use it to improve its products; on the free tier it may, so Storybound recommends a key with billing set up.

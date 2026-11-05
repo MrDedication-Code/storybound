@@ -24,7 +24,11 @@ import {
 } from '../../domain/contracts'
 import { clamp, quoteText } from '../../domain/reading'
 import { countWords, recordChange } from './changeRecords'
-import { createEditingOperations, saveRollingRevision } from './editingRepository'
+import {
+  createEditingOperations,
+  requireEditableBook,
+  saveRollingRevision
+} from './editingRepository'
 import {
   createSqlWriteCoordinator,
   type SqlDatabasePort,
@@ -45,6 +49,8 @@ interface BookRow {
   total_word_count: number
   progress_percentage: number
   last_read_at: string | null
+  share_sender_name: string | null
+  share_mode: BookSummary['shareMode']
 }
 
 interface ChapterRow {
@@ -75,6 +81,8 @@ const bookSummaryQuery = `
     b.blurb,
     b.status,
     b.cover_tone,
+    b.share_sender_name,
+    b.share_mode,
     CASE WHEN bc.book_id IS NULL THEN NULL
       ELSE 'data:' || bc.mime_type || ';base64,' || bc.data END AS cover_uri,
     (
@@ -108,7 +116,9 @@ function mapBook(row: BookRow): BookSummary {
     chapterCount: row.chapter_count,
     totalWordCount: row.total_word_count,
     progressPercentage: row.progress_percentage,
-    lastReadAt: row.last_read_at
+    lastReadAt: row.last_read_at,
+    shareSenderName: row.share_sender_name,
+    shareMode: row.share_mode
   }
 }
 
@@ -392,6 +402,7 @@ export function createSQLiteRepository(
             [input.id]
           )
           if (!previous) throw new Error('That chapter could not be found in this library.')
+          await requireEditableBook(transaction, previous.book_id)
           if (previous.content !== content || previous.title !== title) {
             await saveRollingRevision(transaction, previous, now(), createId())
           }

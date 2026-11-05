@@ -66,6 +66,16 @@
 - **Inbox folder for every other tool:** a polled folder with simple front matter works with any AI or text editor. Processed files move to `Imported/` or `Failed/` with an explanation, files modified in the last few seconds wait, and an identical re-drop is skipped.
 - **Single-instance lock:** Claude may start Storybound while it is already open, so a second launch focuses the existing window and never opens the same database twice.
 
+## Sharing books
+
+- **Keys come from the vault key:** every linked device derives the same sharing keys, so there is nothing new to sync or back up.
+- **An address is a fingerprint of the keys:** the sender checks what the server returns against the address, so the server cannot redirect a book. It has 80 bits because it lasts for the life of the account, unlike the six words of a device link.
+- **Every parcel carries the whole book:** one format, any parcel stands alone, and a missed update loses nothing. A novel is about a megabyte, so sending only the changes is not worth the extra failure cases.
+- **Ids are derived from the share and the sender's ids:** every device of the recipient recognises the same chapter with no lookup table, and only the original sender's address can update a book.
+- **The lock lives in the store:** `assertBookEditable` covers every route, including Claude. Hiding buttons alone would leave routes open. Sync and `receiveSharedBook` write directly, so they are the only ways a locked book changes.
+- **Share fields are optional in book records:** a record from an older version leaves them untouched, so an old phone cannot unlock a book.
+- **Sounds are generated in the app:** there are no recordings to license or bundle.
+
 ## Security and privacy
 
 - No analytics, advertising, mandatory account, hidden backup, or remote font. Encrypted sync is opt-in and can be omitted entirely from an unconfigured build.

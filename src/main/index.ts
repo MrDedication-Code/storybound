@@ -25,6 +25,7 @@ import { registerStoryboundIpc } from './ipc'
 import { AppLogger } from './logger'
 import { registerMediaProtocol } from './media-protocol'
 import { StoryboundStore } from './store'
+import { StoryboundSharingController } from './cloud/sharingController'
 import { StoryboundSyncController } from './cloud/syncController'
 import { AgentBridgeController } from './agentBridge'
 import { claudeDesktopConfigPaths } from './agentBridge/claudeDesktopPaths'
@@ -405,6 +406,7 @@ async function start(): Promise<void> {
   unregisterIpc = registerStoryboundIpc({
     store,
     sync: syncController,
+    sharing: new StoryboundSharingController(store, syncController),
     agentBridge,
     narration: new NarrationController(store.paths.root, new ElectronCredentialProtector()),
     logger,

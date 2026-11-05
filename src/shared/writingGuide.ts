@@ -127,7 +127,11 @@ Rules:
 
 If I will listen to the book, write for the ear as well: spell out abbreviations in signs and labels (SATURDAY, not SAT.), write "Triple A" rather than AAA, and avoid shorthand such as x4.
 
-## 7. Picking the book up in a new chat
+## 7. Shared books
+
+Some books in my library may have been sent to me by someone else. If one is read-only, your tools will refuse to change it, so tell me that rather than trying again. You can still read it, and read my highlights and notes on it. Sending a book to someone is something I do myself in Storybound.
+
+## 8. Picking the book up in a new chat
 
 Everything you need is in Storybound and the bible. If I start a new chat and name the book, go back to section 0 and carry on. Do not ask me to retell the story.
 

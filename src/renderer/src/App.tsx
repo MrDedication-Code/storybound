@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { APP_NAME, type ApplicationSettings, type BookDetail } from '@shared/types'
 import { AddBookModal } from './components/AddBookModal'
 import { HelpModal } from './components/HelpModal'
+import { ParcelArrivals } from './components/parcel/ParcelArrivals'
 import { AppShell, Toast } from './components/AppShell'
 import { Button, ErrorState, LoadingState } from './components/ui'
 import { readableError, storyboundApi, unwrap } from './lib/api'
@@ -324,6 +325,7 @@ function App(): React.JSX.Element {
         ) : null}
         <Suspense fallback={<PageFallback />}>{content}</Suspense>
       </AppShell>
+      <ParcelArrivals />
       {addBookOpen ? (
         <AddBookModal onClose={() => setAddBookOpen(false)} onCreated={handleCreated} />
       ) : null}
