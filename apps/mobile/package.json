@@ -35,5 +35,14 @@
     "check": "npm run typecheck && npm run test",
     "build:android": "scripts/build-android.sh"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-audio"
+        ]
+      }
+    }
+  }
 }

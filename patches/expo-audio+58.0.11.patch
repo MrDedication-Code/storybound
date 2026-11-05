@@ -1,0 +1,12 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+index 6c81fce..3b31964 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+@@ -234,6 +234,7 @@ class AudioModule : Module() {
+       audioFocusRequest = AudioFocusRequest.Builder(requestType).run {
+         setAudioAttributes(
+           AudioAttributes.Builder()
++            .setUsage(AudioAttributes.USAGE_MEDIA)
+             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+             .build()
+         )

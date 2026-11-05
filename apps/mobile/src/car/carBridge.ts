@@ -1,9 +1,10 @@
-import { StoryboundCar, type CarCommand } from '../../modules/storybound-car'
+import { StoryboundCar, type CarButton, type CarCommand } from '../../modules/storybound-car'
 import { sharedRepository } from '../data/sqlite/sharedRepository'
 import type { MobileRepository } from '../domain/contracts'
 import { listeningSession } from '../narration'
 import { createListeningVoice } from '../narration/googleVoice'
 import type { ListeningSnapshot } from '../narration/listeningSession'
+import { CarButtonGuard } from './carButtonGuard'
 
 /**
  * Storybound in Android Auto. The car's library and buttons arrive here as commands; what is being
@@ -18,6 +19,7 @@ export function startCarBridge(): void {
 
   let last = ''
   const publish = (snapshot: ListeningSnapshot): void => {
+    buttons.observe(snapshot)
     const active = snapshot.status !== 'idle' && snapshot.bookId !== null
     const playing = snapshot.status === 'playing'
     const loading = snapshot.status === 'loading'
@@ -45,6 +47,8 @@ export function startCarBridge(): void {
   }
   void publishLibrary()
 }
+
+const buttons = new CarButtonGuard()
 
 async function repository(): Promise<MobileRepository> {
   return (await sharedRepository()).repository
@@ -113,6 +117,16 @@ async function startBook(bookId?: string): Promise<void> {
   })
 }
 
+/** A physical button: acts unless the phone's own player already did for the same press. */
+async function pressed(button: CarButton): Promise<void> {
+  if (buttons.alreadyActedOn(button)) return
+  const session = listeningSession()
+  if (button === 'next') session.next()
+  else if (button === 'previous') session.previous()
+  else if (session.current.bookId && session.current.status !== 'idle') session.toggle()
+  else await startBook()
+}
+
 async function handle(command: CarCommand): Promise<void> {
   const session = listeningSession()
   try {
@@ -129,6 +143,9 @@ async function handle(command: CarCommand): Promise<void> {
         return
       case 'previous':
         session.previous()
+        return
+      case 'button':
+        await pressed(command.button)
         return
       case 'playBook':
         await startBook(command.bookId)

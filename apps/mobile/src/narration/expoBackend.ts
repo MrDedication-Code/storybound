@@ -44,11 +44,12 @@ export function createExpoBackend(): ListeningBackend {
       if (!audioModeSet) {
         audioModeSet = true
         // Keep reading with the screen off or the app in the background, and stop other apps'
-        // sound while reading.
+        // sound while reading. Persistent, because a book is long-running media: 'doNotMix' asks
+        // for sound the way a brief announcement does, and a car treats it like one.
         void setAudioModeAsync({
           playsInSilentMode: true,
           shouldPlayInBackground: true,
-          interruptionMode: 'doNotMix'
+          interruptionMode: 'doNotMixPersistent'
         }).catch(() => {
           audioModeSet = false
         })

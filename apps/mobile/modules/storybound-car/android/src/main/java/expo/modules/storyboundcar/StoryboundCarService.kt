@@ -1,7 +1,12 @@
 package expo.modules.storyboundcar
 
 import android.app.PendingIntent
+import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.KeyEvent
+import androidx.core.content.IntentCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -17,6 +22,9 @@ private const val CONTINUE = "continue"
 private const val LIBRARY = "library"
 private const val RECENT = "recent"
 
+/** Long enough for the phone's own player, which can hear the same press, to act first. */
+private const val BUTTON_WAIT_MS = 450L
+
 /**
  * Storybound in Android Auto: a "Continue listening" tab with the books being read, a "Library"
  * tab with every book, and a now-playing screen whose buttons control the phone's listening.
@@ -25,6 +33,7 @@ private const val RECENT = "recent"
 class StoryboundCarService : MediaLibraryService() {
   private var session: MediaLibrarySession? = null
   private var player: CarPlayer? = null
+  private val main = Handler(Looper.getMainLooper())
 
   override fun onCreate() {
     super.onCreate()
@@ -51,6 +60,7 @@ class StoryboundCarService : MediaLibraryService() {
   override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) = Unit
 
   override fun onDestroy() {
+    main.removeCallbacksAndMessages(null)
     CarBridge.onChanged = null
     CarBridge.onLibraryChanged = null
     session?.release()
@@ -104,6 +114,34 @@ class StoryboundCarService : MediaLibraryService() {
   }
 
   private inner class Callback : MediaLibrarySession.Callback {
+    /**
+     * A steering-wheel press can reach both this session and the session of the phone's own
+     * player. Left alone, a play/pause press would pause and then resume straight away, and a
+     * skip would move twice, so the app is asked to act only if the player has not already.
+     */
+    override fun onMediaButtonEvent(
+      session: MediaSession,
+      controllerInfo: MediaSession.ControllerInfo,
+      intent: Intent
+    ): Boolean {
+      val key = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        ?: return false
+      val button = when (key.keyCode) {
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> "toggle"
+        KeyEvent.KEYCODE_MEDIA_NEXT -> "next"
+        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> "previous"
+        else -> return false
+      }
+      // With nothing loaded there is only this session; it resumes the latest book.
+      if (CarBridge.nowPlaying.bookId == null) return false
+      if (key.action == KeyEvent.ACTION_DOWN && key.repeatCount == 0) {
+        main.postDelayed({
+          CarBridge.command(this@StoryboundCarService, mapOf("type" to "button", "button" to button))
+        }, BUTTON_WAIT_MS)
+      }
+      return true
+    }
+
     override fun onGetLibraryRoot(
       session: MediaLibrarySession,
       browser: MediaSession.ControllerInfo,

@@ -22,4 +22,5 @@ dependencies {
   // The same Media3 as expo-audio's player, for the library Android Auto browses.
   implementation "androidx.media3:media3-session:1.9.1"
   implementation 'com.facebook.react:react-android'
+  implementation 'androidx.core:core-ktx:1.13.1'
 }
