@@ -23,7 +23,7 @@ import { BottomSheet } from '../components/BottomSheet'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { coverToneFromStyle } from '../sync/entityMapping'
 import { storyboundColors } from '../theme'
-import { storeStyles } from './BookstoreScreen'
+import { storeStyles } from './bookstoreStyles'
 
 function labelOf(items: readonly { id: string; label: string }[], id: string): string {
   return items.find((item) => item.id === id)?.label ?? id
