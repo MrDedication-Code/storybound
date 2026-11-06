@@ -169,6 +169,65 @@ describe.skipIf(!url || !key || !container)('the Bookstore, end to end', () => {
     await expect(author.bookstore.publish(details)).rejects.toThrow('removed from the Bookstore')
   }, 60_000)
 
+  it('suspends an author, removes their books, and lets the reviewer lift it', async () => {
+    const admin = await person('reviewer')
+    const author = await person('banned')
+    const reader = await person('fan')
+    makeAdmin(admin.userId)
+    await author.bookstore.setPenName(`Banned ${randomUUID().slice(0, 8)}`)
+    const book = author.store.createBook({
+      title: 'Copied Book',
+      initialChapterTitle: 'One',
+      initialChapterContent: 'Words taken from elsewhere.'
+    })
+    const [listing] = await author.bookstore.publish({
+      bookId: book.id,
+      blurb: 'A book that should not be here at all.',
+      genre: 'other',
+      contentWarnings: [],
+      aiUse: 'none',
+      rightsConfirmed: true
+    })
+    await admin.bookstore.reviewQueue()
+    await admin.bookstore.decide({ listingId: listing.id, version: 1, approve: true, reason: '' })
+    await reader.bookstore.openBook(listing.id)
+    const { bookId } = reader.bookstore.collectBook(listing.id)
+
+    await expect(
+      reader.bookstore.suspend({ listingId: listing.id, reason: 'No.', removeBooks: true })
+    ).rejects.toThrow('Not allowed')
+    await admin.bookstore.suspend({
+      listingId: listing.id,
+      reason: 'Repeated copying.',
+      removeBooks: true
+    })
+
+    expect(await author.bookstore.status()).toMatchObject({
+      suspended: true,
+      suspensionReason: 'Repeated copying.'
+    })
+    await expect(author.bookstore.browse({})).rejects.toThrow('can no longer use the Bookstore')
+    expect(author.store.getBook(book.id).title).toBe('Copied Book')
+    expect((await reader.bookstore.checkBooks()).removed).toEqual([
+      { bookId, title: 'Copied Book', reason: 'Repeated copying.' }
+    ])
+
+    const [blocked] = await admin.bookstore.suspended()
+    expect(blocked.reason).toBe('Repeated copying.')
+    await admin.bookstore.unsuspend(blocked.ownerId)
+    expect(await author.bookstore.status()).toMatchObject({ suspended: false })
+    await expect(
+      author.bookstore.publish({
+        bookId: book.id,
+        blurb: 'A book that should not be here at all.',
+        genre: 'other',
+        contentWarnings: [],
+        aiUse: 'none',
+        rightsConfirmed: true
+      })
+    ).rejects.toThrow('removed from the Bookstore')
+  }, 60_000)
+
   it('refuses to publish a book that came from someone else', async () => {
     const reader = await person('copier')
     const book = reader.store.createBook({ title: 'Mine' })

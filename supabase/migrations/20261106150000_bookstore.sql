@@ -11,6 +11,7 @@ create table public.storybound_store_members (
   terms_version integer not null check (terms_version >= 1),
   adult_confirmed_at timestamptz not null,
   suspended_at timestamptz,
+  suspension_reason text check (suspension_reason is null or char_length(suspension_reason) <= 2000),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -318,6 +319,7 @@ begin
     'joined', member.owner_id is not null and member.terms_version >= current_terms,
     'penName', member.pen_name,
     'suspended', member.suspended_at is not null,
+    'suspensionReason', member.suspension_reason,
     'isAdmin', public.storybound_is_admin(),
     'termsVersion', current_terms
   );
@@ -535,7 +537,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  perform public.storybound_store_require_member();
+  -- Only a session: a suspended reader still needs to hear about removed books.
+  perform public.storybound_require_session();
   if coalesce(array_length(p_listing_ids, 1), 0) > 2000 then
     raise exception 'Too many books';
   end if;
@@ -823,6 +826,95 @@ begin
 end;
 $$;
 
+-- Stops an author using the store. Their pending work goes, and their books too if asked.
+create or replace function public.suspend_storybound_author(
+  p_listing_id uuid,
+  p_reason text,
+  p_remove_books boolean
+) returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  author_id uuid;
+  clean text := btrim(coalesce(p_reason, ''));
+begin
+  perform public.storybound_require_admin();
+  if char_length(clean) = 0 then raise exception 'Say why the account is being suspended'; end if;
+  select owner_id into author_id from public.storybound_store_listings where id = p_listing_id;
+  if author_id is null then raise exception 'That book is not in the Bookstore'; end if;
+  if exists (select 1 from public.storybound_admins where owner_id = author_id) then
+    raise exception 'A reviewer cannot be suspended';
+  end if;
+
+  update public.storybound_store_members
+  set suspended_at = now(), suspension_reason = clean, updated_at = now()
+  where owner_id = author_id;
+
+  update public.storybound_store_versions version
+  set status = 'superseded'
+  from public.storybound_store_listings listing
+  where listing.id = version.listing_id
+    and listing.owner_id = author_id
+    and version.status = 'pending';
+
+  update public.storybound_store_listings
+  set status = case when live_version is null then 'withdrawn' else status end,
+      updated_at = now()
+  where owner_id = author_id and status = 'pending';
+
+  if p_remove_books then
+    update public.storybound_store_listings
+    set status = 'removed', removal_reason = clean, updated_at = now()
+    where owner_id = author_id and status <> 'removed';
+    update public.storybound_store_reports report
+    set closed_at = now(), outcome = 'Removed: ' || clean
+    from public.storybound_store_listings listing
+    where listing.id = report.listing_id
+      and listing.owner_id = author_id
+      and report.closed_at is null;
+  end if;
+end;
+$$;
+
+-- Lifts a suspension. Books that were removed stay removed.
+create or replace function public.unsuspend_storybound_member(p_owner_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.storybound_require_admin();
+  update public.storybound_store_members
+  set suspended_at = null, suspension_reason = null, updated_at = now()
+  where owner_id = p_owner_id;
+end;
+$$;
+
+create or replace function public.list_storybound_suspended()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.storybound_require_admin();
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'ownerId', member.owner_id,
+      'penName', member.pen_name,
+      'reason', member.suspension_reason,
+      'suspendedAt', member.suspended_at
+    ) order by member.suspended_at desc)
+    from public.storybound_store_members member
+    where member.suspended_at is not null
+  ), '[]'::jsonb);
+end;
+$$;
+
 create or replace function public.list_storybound_reports()
 returns jsonb
 language plpgsql
@@ -939,7 +1031,8 @@ begin
       'check_storybound_books', 'submit_storybound_version', 'list_my_storybound_listings',
       'withdraw_storybound_listing', 'report_storybound_listing', 'list_storybound_review_queue',
       'review_storybound_version', 'remove_storybound_listing', 'list_storybound_reports',
-      'close_storybound_report', 'withdraw_all_storybound_listings', 'delete_storybound_account'
+      'close_storybound_report', 'suspend_storybound_author', 'unsuspend_storybound_member',
+      'list_storybound_suspended', 'withdraw_all_storybound_listings', 'delete_storybound_account'
     ])
   loop
     execute format('revoke all on function %s from public, anon', routine);

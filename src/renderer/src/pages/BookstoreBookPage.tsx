@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen, Flag, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Ban, BookOpen, Flag, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { AI_USES, BOOKSTORE_GENRES, CONTENT_WARNINGS, type StoreListing } from '@shared/bookstore'
 import { BookCover } from '../components/BookCover'
@@ -29,6 +29,9 @@ function Listing({
   const [reporting, setReporting] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [reason, setReason] = useState('')
+  const [suspending, setSuspending] = useState(false)
+  const [suspendReason, setSuspendReason] = useState('')
+  const [removeBooks, setRemoveBooks] = useState(true)
 
   const load = useCallback(async (): Promise<void> => {
     setError('')
@@ -56,6 +59,23 @@ function Listing({
     } catch (caught) {
       setError(readableError(caught))
       setRemoving(false)
+    }
+  }
+
+  const suspend = async (): Promise<void> => {
+    try {
+      unwrap(
+        await storyboundApi().bookstore.suspend({
+          listingId,
+          reason: suspendReason,
+          removeBooks
+        })
+      )
+      notify('The account was suspended.')
+      navigate(routes.bookstoreReview())
+    } catch (caught) {
+      setError(readableError(caught))
+      setSuspending(false)
     }
   }
 
@@ -114,6 +134,11 @@ function Listing({
                 Remove
               </Button>
             ) : null}
+            {member.isAdmin && !listing.mine ? (
+              <Button icon={Ban} variant="danger" onClick={() => setSuspending(true)}>
+                Suspend author
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -148,6 +173,44 @@ function Listing({
             notify('Thank you. The report was sent.')
           }}
         />
+      ) : null}
+      {suspending ? (
+        <Modal
+          description="They can no longer read or publish in the Bookstore. The books in their library are not affected. You can lift this later on the Review page."
+          onClose={() => setSuspending(false)}
+          size="small"
+          title={`Suspend ${listing.authorName}?`}
+        >
+          <label className="field">
+            <span>Reason, shown to them</span>
+            <textarea
+              maxLength={2000}
+              rows={3}
+              value={suspendReason}
+              onChange={(event) => setSuspendReason(event.target.value)}
+            />
+          </label>
+          <label className="store-check">
+            <input
+              checked={removeBooks}
+              type="checkbox"
+              onChange={(event) => setRemoveBooks(event.target.checked)}
+            />
+            <span>
+              Also remove all their books. Readers’ copies move to Trash, and this can’t be undone.
+            </span>
+          </label>
+          <div className="modal__actions">
+            <Button onClick={() => setSuspending(false)}>Cancel</Button>
+            <Button
+              disabled={!suspendReason.trim()}
+              variant="danger"
+              onClick={() => void suspend()}
+            >
+              Suspend
+            </Button>
+          </div>
+        </Modal>
       ) : null}
       {removing ? (
         <Modal

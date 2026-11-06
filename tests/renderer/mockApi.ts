@@ -597,7 +597,10 @@ export function makeApi(): StoryboundApi {
       decide: vi.fn(),
       remove: vi.fn(async () => ok(undefined)),
       reports: vi.fn(async () => ok([])),
-      closeReport: vi.fn()
+      closeReport: vi.fn(),
+      suspend: vi.fn(),
+      suspended: vi.fn(async () => ok([])),
+      unsuspend: vi.fn()
     },
     sharing: {
       status: vi.fn(async () =>

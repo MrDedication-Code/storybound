@@ -25,7 +25,9 @@ import type {
   ReviewItem,
   StoreListing,
   StorePage,
-  StoreReport
+  StoreReport,
+  SuspendAuthorInput,
+  SuspendedMember
 } from './bookstore'
 import type {
   SyncConflictRecord,
@@ -1010,6 +1012,9 @@ export interface StoryboundApi {
     remove(input: RemoveListingInput): Promise<ApiResult<void>>
     reports(): Promise<ApiResult<StoreReport[]>>
     closeReport(input: CloseReportInput): Promise<ApiResult<StoreReport[]>>
+    suspend(input: SuspendAuthorInput): Promise<ApiResult<void>>
+    suspended(): Promise<ApiResult<SuspendedMember[]>>
+    unsuspend(ownerId: string): Promise<ApiResult<SuspendedMember[]>>
   }
   sharing: {
     status(): Promise<ApiResult<SharingStatus>>

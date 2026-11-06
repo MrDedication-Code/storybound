@@ -100,6 +100,7 @@ export const storeProfileSchema = z.object({
   joined: z.boolean(),
   penName: z.string().nullable(),
   suspended: z.boolean(),
+  suspensionReason: z.string().nullable(),
   isAdmin: z.boolean(),
   termsVersion: z.number().int()
 })
@@ -245,6 +246,8 @@ const SERVER_MESSAGES = [
   'Too many versions of this book today',
   'Say why it was not approved',
   'Say why it was removed',
+  'Say why the account is being suspended',
+  'A reviewer cannot be suspended',
   'That version is not waiting',
   'Not allowed'
 ]
@@ -262,6 +265,21 @@ export const passwordResetSchema = z.object({
   password: z.string().min(10).max(200)
 })
 export type PasswordResetInput = z.infer<typeof passwordResetSchema>
+
+export const suspendAuthorSchema = z.object({
+  listingId: z.uuid(),
+  reason: z.string().trim().min(1).max(2000),
+  removeBooks: z.boolean()
+})
+export type SuspendAuthorInput = z.infer<typeof suspendAuthorSchema>
+
+export const suspendedMemberSchema = z.object({
+  ownerId: z.uuid(),
+  penName: z.string().nullable(),
+  reason: z.string().nullable(),
+  suspendedAt: z.string()
+})
+export type SuspendedMember = z.infer<typeof suspendedMemberSchema>
 
 export const penNameSchema = z.string().trim().min(2).max(60)
 

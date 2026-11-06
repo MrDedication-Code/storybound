@@ -7,7 +7,8 @@ import {
   REPORT_REASONS,
   type ReviewBook,
   type ReviewItem,
-  type StoreReport
+  type StoreReport,
+  type SuspendedMember
 } from '@shared/bookstore'
 import { StoreGate } from '../components/bookstore/StoreGate'
 import { StoryMarkdown } from '../components/StoryMarkdown'
@@ -138,18 +139,21 @@ function ReviewBookModal({
 function ReviewDesk({ notify }: { notify: (message: string) => void }): React.JSX.Element {
   const [queue, setQueue] = useState<ReviewItem[] | null>(null)
   const [reports, setReports] = useState<StoreReport[]>([])
+  const [suspended, setSuspended] = useState<SuspendedMember[]>([])
   const [open, setOpen] = useState<ReviewItem | null>(null)
   const [error, setError] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
     setError('')
     try {
-      const [waiting, reported] = await Promise.all([
+      const [waiting, reported, blocked] = await Promise.all([
         storyboundApi().bookstore.reviewQueue(),
-        storyboundApi().bookstore.reports()
+        storyboundApi().bookstore.reports(),
+        storyboundApi().bookstore.suspended()
       ])
       setQueue(unwrap(waiting))
       setReports(unwrap(reported))
+      setSuspended(unwrap(blocked))
     } catch (caught) {
       setError(readableError(caught))
     }
@@ -169,6 +173,15 @@ function ReviewDesk({ notify }: { notify: (message: string) => void }): React.JS
           })
         )
       )
+    } catch (caught) {
+      setError(readableError(caught))
+    }
+  }
+
+  const lift = async (member: SuspendedMember): Promise<void> => {
+    try {
+      setSuspended(unwrap(await storyboundApi().bookstore.unsuspend(member.ownerId)))
+      notify('The suspension was lifted.')
     } catch (caught) {
       setError(readableError(caught))
     }
@@ -228,6 +241,27 @@ function ReviewDesk({ notify }: { notify: (message: string) => void }): React.JS
           <p>No open reports.</p>
         )}
       </section>
+      {suspended.length ? (
+        <section className="content-section" aria-labelledby="suspended-heading">
+          <h2 id="suspended-heading">Suspended</h2>
+          <ul className="store-list">
+            {suspended.map((member) => (
+              <li key={member.ownerId}>
+                <span>
+                  <strong>{member.penName ?? 'A reader'}</strong>
+                  <small>
+                    {formatDate(member.suspendedAt)}
+                    {member.reason ? ` · ${member.reason}` : ''}
+                  </small>
+                </span>
+                <Button variant="quiet" onClick={() => void lift(member)}>
+                  Lift
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {open ? (
         <ReviewBookModal
           item={open}

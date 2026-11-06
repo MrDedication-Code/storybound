@@ -156,6 +156,7 @@ export class MobileBookstore {
         })
       } else if (
         item.status === 'live' &&
+        !profile.suspended &&
         item.version !== null &&
         item.version > book.version &&
         item.filePath &&

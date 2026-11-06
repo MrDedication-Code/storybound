@@ -103,7 +103,13 @@ export function StoreGate({
   }
   if (status.phase === 'signed-out') return <AccountForm onDone={() => void load()} />
   if (status.suspended) {
-    return <InlineNotice tone="error">This account can no longer use the Bookstore.</InlineNotice>
+    return (
+      <InlineNotice tone="error">
+        This account can no longer use the Bookstore.
+        {status.suspensionReason ? ` ${status.suspensionReason}` : ''} The books in your library are
+        not affected.
+      </InlineNotice>
+    )
   }
   if (!status.joined) {
     return <JoinBookstore termsVersion={status.termsVersion} onJoined={setStatus} />

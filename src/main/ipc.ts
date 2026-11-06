@@ -92,7 +92,8 @@ import {
   readForReviewSchema,
   removeListingSchema,
   reportListingSchema,
-  reviewDecisionSchema
+  reviewDecisionSchema,
+  suspendAuthorSchema
 } from '../shared/bookstore'
 import type { StoryboundBookstoreController } from './cloud/bookstoreController'
 import type { StoryboundSharingController } from './cloud/sharingController'
@@ -434,6 +435,9 @@ export function registerStoryboundIpc({
   handle(IPC_CHANNELS.bookstoreCloseReport, closeReportSchema, (input) =>
     bookstore.closeReport(input)
   )
+  handle(IPC_CHANNELS.bookstoreSuspend, suspendAuthorSchema, (input) => bookstore.suspend(input))
+  handle(IPC_CHANNELS.bookstoreSuspended, noInput, () => bookstore.suspended())
+  handle(IPC_CHANNELS.bookstoreUnsuspend, idSchema, (ownerId) => bookstore.unsuspend(ownerId))
   handle(IPC_CHANNELS.syncRequestPasswordReset, passwordResetRequestSchema, ({ email }) =>
     sync.requestPasswordReset(email)
   )

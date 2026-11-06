@@ -1,5 +1,5 @@
 begin;
-select plan(38);
+select plan(51);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -249,6 +249,69 @@ select is(
 reset role;
 update public.storybound_settings set value = 'false' where key = 'paywall_enabled';
 set local role authenticated;
+
+-- Suspending an author stops them, and only a reviewer can do it.
+select pg_temp.as_reader();
+select throws_ok(
+  $$select public.suspend_storybound_author('11111111-1111-4111-8111-111111111111', 'No.', true)$$,
+  null, 'Not allowed', 'a reader cannot suspend anyone'
+);
+select pg_temp.as_admin();
+select throws_ok(
+  $$select public.suspend_storybound_author('11111111-1111-4111-8111-111111111111', ' ', false)$$,
+  null, 'Say why the account is being suspended', 'a suspension needs a reason'
+);
+select lives_ok(
+  $$select public.suspend_storybound_author(
+    '11111111-1111-4111-8111-111111111111', 'Repeated copying.', false
+  )$$,
+  'the reviewer suspends the author'
+);
+select is(
+  jsonb_array_length(public.list_storybound_review_queue()), 0,
+  'their waiting update leaves the queue'
+);
+select is(
+  public.list_storybound_suspended()->0->>'reason', 'Repeated copying.',
+  'the reviewer can see who is suspended, and why'
+);
+select pg_temp.as_author();
+select throws_ok(
+  $$select public.browse_storybound_store()$$,
+  null, 'This account can no longer use the Bookstore', 'a suspended account cannot browse'
+);
+select throws_ok(
+  $$select pg_temp.submit(
+    gen_random_uuid(), '22222222-2222-4222-8222-222222222222', 'Again', 'three.json'
+  )$$,
+  null, 'This account can no longer use the Bookstore', 'a suspended account cannot publish'
+);
+select is(
+  public.storybound_can_upload_book('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/four.json'), false,
+  'a suspended account cannot upload'
+);
+select is(
+  public.get_storybound_store_profile()->>'suspensionReason', 'Repeated copying.',
+  'they are told why'
+);
+select is(
+  jsonb_array_length(
+    public.check_storybound_books(array['11111111-1111-4111-8111-111111111111'::uuid])
+  ), 1, 'a suspended account still hears about its copies'
+);
+select pg_temp.as_reader();
+select is(
+  public.storybound_can_read_book('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/one.json'), true,
+  'their published book stays unless the reviewer removed it'
+);
+select pg_temp.as_admin();
+select lives_ok(
+  $$select public.unsuspend_storybound_member('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')$$,
+  'the reviewer lifts the suspension'
+);
+select is(
+  public.list_storybound_suspended(), '[]'::jsonb, 'nobody is suspended any more'
+);
 
 -- Removal reaches readers' copies.
 select pg_temp.as_admin();

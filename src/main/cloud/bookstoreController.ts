@@ -13,6 +13,7 @@ import {
   storePageSchema,
   storeProfileSchema,
   storeReportSchema,
+  suspendedMemberSchema,
   type AddedBook,
   type BookstoreCheckResult,
   type BookstoreStatus,
@@ -28,7 +29,9 @@ import {
   type ReviewItem,
   type StoreListing,
   type StorePage,
-  type StoreReport
+  type StoreReport,
+  type SuspendAuthorInput,
+  type SuspendedMember
 } from '../../shared/bookstore'
 import {
   sharedBookSchema,
@@ -337,6 +340,7 @@ export class StoryboundBookstoreController {
         })
       } else if (
         item.status === 'live' &&
+        !profile.suspended &&
         !book.deleted &&
         item.version !== null &&
         item.version > book.version &&
@@ -418,6 +422,36 @@ export class StoryboundBookstoreController {
       { p_listing_id: input.listingId, p_reason: input.reason },
       'The book could not be removed.'
     )
+  }
+
+  async suspend(input: SuspendAuthorInput): Promise<void> {
+    const access = await this.requireAccess()
+    await this.call(
+      access,
+      'suspend_storybound_author',
+      { p_listing_id: input.listingId, p_reason: input.reason, p_remove_books: input.removeBooks },
+      'The account could not be suspended.'
+    )
+  }
+
+  async suspended(): Promise<SuspendedMember[]> {
+    const access = await this.requireAccess()
+    return z
+      .array(suspendedMemberSchema)
+      .parse(
+        await this.call(access, 'list_storybound_suspended', {}, 'The list could not be loaded.')
+      )
+  }
+
+  async unsuspend(ownerId: string): Promise<SuspendedMember[]> {
+    const access = await this.requireAccess()
+    await this.call(
+      access,
+      'unsuspend_storybound_member',
+      { p_owner_id: ownerId },
+      'The suspension could not be lifted.'
+    )
+    return this.suspended()
   }
 
   async reports(): Promise<StoreReport[]> {

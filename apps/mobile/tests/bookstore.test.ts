@@ -256,6 +256,7 @@ describe('Bookstore books on the phone', () => {
       joined: true,
       penName: null,
       suspended: false,
+      suspensionReason: null,
       isAdmin: false,
       termsVersion: 1
     }
@@ -298,6 +299,19 @@ describe('Bookstore books on the phone', () => {
         { bookId, title: 'The Salt Road', reason: 'It was copied.' }
       ])
       expect(await repository.findBookstoreBook(LISTING)).toBeNull()
+    })
+
+    it('a suspended reader hears about removals, but fetches no updates', async () => {
+      await repository.receiveBookstoreBook(origin(1), book([[ONE, 'One', 'Old words.']]))
+      const { account } = fakeAccount((name) =>
+        name === 'check_storybound_books'
+          ? [{ ...added, status: 'live', version: 2, removalReason: null }]
+          : { ...profile, suspended: true, suspensionReason: 'Repeated copying.' }
+      )
+      const fetchText = vi.fn(async () => file)
+      const store = new MobileBookstore(repository, account, fetchText)
+      expect(await store.checkBooks()).toEqual({ updated: [], removed: [] })
+      expect(fetchText).not.toHaveBeenCalled()
     })
 
     it('says nothing when signed out, and asks nothing of a build with no server', async () => {

@@ -16,6 +16,7 @@ const member = {
   joined: true,
   penName: null,
   suspended: false,
+  suspensionReason: null,
   isAdmin: false,
   termsVersion: 1
 }
@@ -55,9 +56,13 @@ describe('the door to the Bookstore', () => {
 
   it('keeps a suspended account out', async () => {
     const api = installApi()
-    vi.mocked(api.bookstore.status).mockResolvedValue(ok({ ...member, suspended: true }))
+    vi.mocked(api.bookstore.status).mockResolvedValue(
+      ok({ ...member, suspended: true, suspensionReason: 'Repeated copying.' })
+    )
     render(<StoreGate>{() => 'Inside'}</StoreGate>)
-    expect(await screen.findByText(/can no longer use the Bookstore/)).toBeInTheDocument()
+    expect(await screen.findByText(/can no longer use the Bookstore/)).toHaveTextContent(
+      'Repeated copying.'
+    )
     expect(screen.queryByText('Inside')).not.toBeInTheDocument()
   })
 

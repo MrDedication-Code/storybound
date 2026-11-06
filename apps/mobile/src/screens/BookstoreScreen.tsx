@@ -448,7 +448,11 @@ export function BookstoreScreen({
         ) : status.phase === 'signed-out' ? (
           <AccountForm controller={controller} onDone={() => void load()} />
         ) : status.suspended ? (
-          <Text style={styles.error}>This account can no longer use the Bookstore.</Text>
+          <Text style={styles.error}>
+            This account can no longer use the Bookstore.
+            {status.suspensionReason ? ` ${status.suspensionReason}` : ''} The books in your library
+            are not affected.
+          </Text>
         ) : !status.joined ? (
           <JoinStore
             bookstore={bookstore}

@@ -156,7 +156,10 @@ const api: StoryboundApi = {
     decide: (input) => invoke(IPC_CHANNELS.bookstoreDecide, input),
     remove: (input) => invoke(IPC_CHANNELS.bookstoreRemove, input),
     reports: () => invoke(IPC_CHANNELS.bookstoreReports),
-    closeReport: (input) => invoke(IPC_CHANNELS.bookstoreCloseReport, input)
+    closeReport: (input) => invoke(IPC_CHANNELS.bookstoreCloseReport, input),
+    suspend: (input) => invoke(IPC_CHANNELS.bookstoreSuspend, input),
+    suspended: () => invoke(IPC_CHANNELS.bookstoreSuspended),
+    unsuspend: (ownerId) => invoke(IPC_CHANNELS.bookstoreUnsuspend, ownerId)
   },
   sharing: {
     status: () => invoke(IPC_CHANNELS.sharingStatus),
