@@ -82,6 +82,16 @@ const wait = (milliseconds: number): Promise<void> =>
  * operating system's protected storage), and a cache of spoken passages so a chapter heard
  * twice is only paid for once.
  */
+/** The engine the free voice runs on is built for this macOS version and later. */
+const KOKORO_MINIMUM_MACOS = 14
+
+export function kokoroUnsupportedReason(platform: string, version: string): string | null {
+  if (platform !== 'darwin') return null
+  const major = Number.parseInt(version, 10)
+  if (!(major < KOKORO_MINIMUM_MACOS)) return null
+  return `The free voice needs macOS ${KOKORO_MINIMUM_MACOS} or later, and this Mac has macOS ${version}. The system voice and the Google voice still work.`
+}
+
 export class NarrationController {
   private settings: NarrationSettings
   private readonly credentials: SecureCredentialStorage
@@ -94,7 +104,11 @@ export class NarrationController {
     private readonly dataPath: string,
     protector: CredentialProtector,
     private readonly fetchImpl: typeof fetch = fetch,
-    kokoro?: KokoroEngine
+    kokoro?: KokoroEngine,
+    private readonly kokoroProblem: string | null = kokoroUnsupportedReason(
+      process.platform,
+      process.getSystemVersion?.() ?? ''
+    )
   ) {
     this.credentials = new SecureCredentialStorage(join(dataPath, CREDENTIALS_FILE), protector)
     this.cachePath = join(dataPath, CACHE_FOLDER)
@@ -117,7 +131,8 @@ export class NarrationController {
         limitedUntil: this.currentLimit()?.toISOString() ?? null
       },
       kokoro: {
-        installed: await this.kokoro.isInstalled(),
+        installed: !this.kokoroProblem && (await this.kokoro.isInstalled()),
+        unsupportedReason: this.kokoroProblem,
         progress: this.kokoro.installProgress,
         downloadBytes: this.kokoro.downloadBytes,
         voiceId: this.settings.kokoroVoiceId,
@@ -133,6 +148,7 @@ export class NarrationController {
 
   /** Downloads the free voice; status() reports progress while it runs. */
   async installKokoro(): Promise<NarrationStatus> {
+    if (this.kokoroProblem) throw new StoryboundError('VALIDATION_ERROR', this.kokoroProblem)
     try {
       await this.kokoro.install()
     } catch (error) {

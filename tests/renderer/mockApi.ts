@@ -187,6 +187,7 @@ export const narrationStatus: NarrationStatus = {
   },
   kokoro: {
     installed: false,
+    unsupportedReason: null,
     progress: null,
     downloadBytes: 346_000_000,
     voiceId: 'bm_george',

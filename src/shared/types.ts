@@ -810,6 +810,8 @@ export interface NarrationStatus {
   /** Kokoro, the free voice that runs on this computer once downloaded. */
   kokoro: {
     installed: boolean
+    /** Why this computer cannot run the free voice, or null when it can. */
+    unsupportedReason: string | null
     /** Bytes downloaded so far while the voice is being downloaded. */
     progress: { received: number; total: number } | null
     downloadBytes: number

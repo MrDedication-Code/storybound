@@ -56,6 +56,10 @@ module.exports = {
     createDesktopShortcut: 'always'
   },
   mac: {
+    // Without a developer certificate, the whole app still has to be signed ad hoc. Otherwise
+    // macOS on Apple Silicon can call a downloaded copy damaged.
+    identity: '-',
+    hardenedRuntime: false,
     entitlementsInherit: 'build/entitlements.mac.plist',
     notarize: false,
     files: filesWithout('win32', 'linux')

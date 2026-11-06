@@ -211,7 +211,9 @@ export function ListeningSettings({ notify }: ListeningSettingsProps): React.JSX
           </div>
           <Download aria-hidden="true" size={21} />
         </div>
-        {kokoro?.installed ? (
+        {kokoro?.unsupportedReason ? (
+          <InlineNotice tone="info">{kokoro.unsupportedReason}</InlineNotice>
+        ) : kokoro?.installed ? (
           <>
             <ul className="listening-voice-list">
               {kokoro.voices.map((voice) => (
