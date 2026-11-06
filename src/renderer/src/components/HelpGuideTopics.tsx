@@ -386,7 +386,8 @@ export function BookstoreGuide(): React.JSX.Element {
       <h3>Publishing your book</h3>
       <ol>
         <li>
-          Open your book and choose <strong>Publish to the Bookstore</strong>.
+          Choose <strong>Publish a book</strong> in the Bookstore, or <strong>Publish</strong> at
+          the top of your book’s page.
         </li>
         <li>Choose a pen name, write a blurb, and add a genre and content warnings.</li>
         <li>Say how AI was used, and confirm you have the right to publish it.</li>

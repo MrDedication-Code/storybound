@@ -18,7 +18,8 @@ export async function launchStorybound(
   await mkdir(userDataPath, { recursive: true })
 
   const app = await electron.launch({
-    args: ['.'],
+    // Keeps a keychain pop-up off the screen of whoever runs the tests on a Mac.
+    args: ['.', '--use-mock-keychain'],
     cwd: resolve('.'),
     env: {
       ...process.env,

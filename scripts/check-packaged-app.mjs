@@ -116,6 +116,8 @@ async function check(executablePath) {
     step('Opening the app')
     app = await electron.launch({
       executablePath,
+      // A new copy on a Mac otherwise stops at a keychain pop-up until someone answers it.
+      args: process.platform === 'darwin' ? ['--use-mock-keychain'] : [],
       env: { ...process.env, STORYBOUND_USER_DATA: dataFolder },
       timeout: 120_000
     })

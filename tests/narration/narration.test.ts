@@ -1,4 +1,8 @@
-import { signUpFoundExistingAccount } from '@storybound/contracts'
+import {
+  ACCOUNT_EXISTS_MESSAGE,
+  signUpErrorMessage,
+  signUpFoundExistingAccount
+} from '@storybound/contracts'
 import { describe, expect, it } from 'vitest'
 import {
   base64ToBytes,
@@ -389,5 +393,9 @@ describe('signing up with an email that already has an account', () => {
     expect(signUpFoundExistingAccount({ identities: [{ id: 'one' }] })).toBe(false)
     expect(signUpFoundExistingAccount({})).toBe(false)
     expect(signUpFoundExistingAccount(null)).toBe(false)
+    expect(
+      signUpErrorMessage({ code: 'user_already_exists', message: 'User already registered' })
+    ).toBe(ACCOUNT_EXISTS_MESSAGE)
+    expect(signUpErrorMessage({ code: 'weak_password', message: 'Too short' })).toBe('Too short')
   })
 })

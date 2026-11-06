@@ -4967,6 +4967,20 @@ kbd {
   white-space: pre-line;
 }
 .store-detail__actions,
+.store-picker {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.store-picker button {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
 .store-publish__actions {
   display: flex;
   flex-wrap: wrap;

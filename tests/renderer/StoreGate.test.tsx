@@ -3,6 +3,7 @@ import React from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { PublishPicker } from '../../src/renderer/src/components/bookstore/PublishPicker'
 import { StoreGate } from '../../src/renderer/src/components/bookstore/StoreGate'
 import { parseRoute, routes } from '../../src/renderer/src/lib/routing'
 import { installApi } from './mockApi'
@@ -73,5 +74,32 @@ describe('the door to the Bookstore', () => {
       name: 'bookstore-book',
       listingId: 'abc'
     })
+  })
+})
+
+describe('finding the way to publish', () => {
+  const book = { id: 'b1', title: 'My Own Book', blurb: null, share: null }
+  const received = { id: 'b2', title: 'From Someone', blurb: null, share: { mode: 'read-only' } }
+
+  it('offers your own books and opens publishing for the one you choose', async () => {
+    installApi({
+      books: { list: vi.fn(async () => ok([book, received])) },
+      bookstore: { myListings: vi.fn(async () => ok([])) }
+    })
+    render(<PublishPicker penName={null} onClose={vi.fn()} onPublished={vi.fn()} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'My Own Book' }))
+    expect(screen.queryByRole('button', { name: 'From Someone' })).not.toBeInTheDocument()
+    expect(await screen.findByText('Publish “My Own Book”')).toBeInTheDocument()
+  })
+
+  it('leaves out a book the Bookstore removed', async () => {
+    installApi({
+      books: { list: vi.fn(async () => ok([book])) },
+      bookstore: {
+        myListings: vi.fn(async () => ok([{ sourceBookId: 'b1', status: 'removed' }]))
+      }
+    })
+    render(<PublishPicker penName={null} onClose={vi.fn()} onPublished={vi.fn()} />)
+    expect(await screen.findByText(/no books of your own/)).toBeInTheDocument()
   })
 })

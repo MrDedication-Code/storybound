@@ -25,7 +25,8 @@ import {
   Users,
   X
 } from 'lucide-react'
-import { BookPublishing } from '../components/bookstore/BookPublishing'
+import { BookPublishing, PublishButton } from '../components/bookstore/BookPublishing'
+import { useBookPublishing } from '../components/bookstore/useBookPublishing'
 import { BookSharing } from '../components/parcel/BookSharing'
 import { ShareBookModal } from '../components/parcel/ShareBookModal'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -123,6 +124,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
   const [shareRefresh, setShareRefresh] = useState(0)
   const [coverStudio, setCoverStudio] = useState<CoverStudioDraft | null>(null)
   const [busy, setBusy] = useState(false)
+  const publishing = useBookPublishing(bookId, Boolean(book && !book.share))
 
   const load = useCallback(async (): Promise<void> => {
     setError('')
@@ -636,6 +638,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
                 Send to someone
               </Button>
             ) : null}
+            {!book.share ? <PublishButton publishing={publishing} /> : null}
           </div>
           <div className="hero-secondary-actions">
             {!locked ? (
@@ -847,7 +850,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
       </section>
 
       <BookSharing bookId={book.id} notify={notify} refreshKey={shareRefresh} />
-      {!book.share ? <BookPublishing book={book} notify={notify} /> : null}
+      {!book.share ? <BookPublishing book={book} notify={notify} publishing={publishing} /> : null}
 
       <section className="content-section" aria-labelledby="chapters-heading">
         <div className="section-heading">

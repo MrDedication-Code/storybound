@@ -59,6 +59,11 @@ export function signUpFoundExistingAccount(
   return user?.identities?.length === 0
 }
 
+/** With email confirmation off, the server says so directly rather than hiding it. */
+export function signUpErrorMessage(error: { code?: string; message: string }): string {
+  return error.code === 'user_already_exists' ? ACCOUNT_EXISTS_MESSAGE : error.message
+}
+
 export const syncCredentialsSchema = z.object({
   email: z.email().max(320),
   password: z.string().min(10).max(1024)

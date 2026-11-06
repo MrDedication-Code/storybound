@@ -1,9 +1,10 @@
-import { ClipboardCheck, Search } from 'lucide-react'
+import { ClipboardCheck, Search, Upload } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { BOOKSTORE_GENRES, type BookstoreGenre, type StoreCard } from '@shared/bookstore'
 import { BookCover } from '../components/BookCover'
+import { PublishPicker } from '../components/bookstore/PublishPicker'
 import { StoreGate, type StoreMember } from '../components/bookstore/StoreGate'
-import { Button, ErrorState, LoadingState } from '../components/ui'
+import { Button, ErrorState, InlineNotice, LoadingState } from '../components/ui'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
 import { formatNumber } from '../lib/format'
 import { navigate, routes } from '../lib/routing'
@@ -38,6 +39,8 @@ function Shelves({ member }: { member: StoreMember }): React.JSX.Element {
   const [hasMore, setHasMore] = useState(false)
   const [page, setPage] = useState(0)
   const [error, setError] = useState('')
+  const [publishing, setPublishing] = useState(false)
+  const [sent, setSent] = useState(false)
 
   const load = useCallback(
     async (nextPage: number): Promise<void> => {
@@ -99,12 +102,20 @@ function Shelves({ member }: { member: StoreMember }): React.JSX.Element {
           <option value="new">Newest</option>
           <option value="popular">Most added</option>
         </select>
+        <Button icon={Upload} onClick={() => setPublishing(true)}>
+          Publish a book
+        </Button>
         {member.isAdmin ? (
           <Button icon={ClipboardCheck} onClick={() => navigate(routes.bookstoreReview())}>
             Review
           </Button>
         ) : null}
       </div>
+      {sent ? (
+        <InlineNotice tone="success">
+          Sent for review. The book’s page in your library shows the result.
+        </InlineNotice>
+      ) : null}
       {error ? (
         <ErrorState message={error} onRetry={() => void load(0)} />
       ) : !books ? (
@@ -128,10 +139,20 @@ function Shelves({ member }: { member: StoreMember }): React.JSX.Element {
           <p>
             {search || genre
               ? 'Try another search or genre.'
-              : 'Publish a book from its page in your library to be the first.'}
+              : 'Choose Publish a book to be the first.'}
           </p>
         </section>
       )}
+      {publishing ? (
+        <PublishPicker
+          penName={member.penName}
+          onClose={() => setPublishing(false)}
+          onPublished={() => {
+            setPublishing(false)
+            setSent(true)
+          }}
+        />
+      ) : null}
     </>
   )
 }

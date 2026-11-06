@@ -94,14 +94,34 @@ test('a book goes from an author, through review, to a reader', async () => {
     await page.evaluate((id) => {
       location.hash = `#/book/${id}`
     }, created.data.id)
-    await page.getByRole('button', { name: 'Publish to the Bookstore' }).click()
+    // The top of the book's page leads to publishing, without scrolling down to find it.
+    await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeVisible()
+    await shot(page, 'store-2-book-page')
+    await page.getByRole('button', { name: 'Publish', exact: true }).click()
+    await expect(page.getByRole('dialog').getByLabel('Pen name')).toBeVisible()
+    await page.keyboard.press('Escape')
+    // So does the Bookstore, which is the route used here.
+    await page.evaluate(() => {
+      location.hash = '#/bookstore'
+    })
+    await expect(page.getByRole('button', { name: 'Publish a book' })).toBeVisible()
+    await shot(page, 'store-2-toolbar')
+    await page.getByRole('button', { name: 'Publish a book' }).click()
+    await expect(page.getByRole('dialog').getByRole('button', { name: title })).toBeVisible()
+    await shot(page, 'store-2-picker')
+    await page.getByRole('dialog').getByRole('button', { name: title }).click()
     await page.getByLabel('Pen name').fill(`A. Writer ${stamp}`)
     await page.getByLabel('Blurb').fill('A ledger, a salt road, and one missing cent.')
     await page.getByLabel('Violence').check()
     await page.getByLabel(/I have the right to publish this book/).check()
     await shot(page, 'store-3-publish')
     await page.getByRole('button', { name: 'Send for review' }).click()
+    await expect(page.getByText(/Sent for review/)).toBeVisible()
+    await page.evaluate((id) => {
+      location.hash = `#/book/${id}`
+    }, created.data.id)
     await expect(page.getByText('Waiting for review.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Update in Bookstore' })).toBeVisible()
     await closeStorybound(running)
 
     // The reviewer approves.
@@ -140,6 +160,7 @@ test('a book goes from an author, through review, to a reader', async () => {
     await dialog.getByRole('button', { name: 'Add to library' }).click({ timeout: 20_000 })
     await expect(page.getByRole('heading', { name: title }).first()).toBeVisible()
     await expect(page.getByRole('button', { name: 'Publish to the Bookstore' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Publish', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Edit book' })).toHaveCount(0)
     await shot(page, 'store-7-in-library')
 

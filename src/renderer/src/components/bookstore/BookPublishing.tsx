@@ -1,12 +1,11 @@
 import { Store } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   AI_USES,
   BOOKSTORE_GENRES,
   CONTENT_WARNINGS,
   type AiUse,
   type BookstoreGenre,
-  type BookstoreStatus,
   type ContentWarning,
   type MyListing
 } from '@shared/bookstore'
@@ -14,6 +13,7 @@ import type { BookDetail } from '@shared/types'
 import { readableError, storyboundApi, unwrap } from '../../lib/api'
 import { navigate, routes } from '../../lib/routing'
 import { Button, InlineNotice, Modal } from '../ui'
+import type { BookPublishingState } from './useBookPublishing'
 
 function statusLine(listing: MyListing): string {
   if (listing.status === 'removed') {
@@ -32,14 +32,14 @@ function statusLine(listing: MyListing): string {
   return `Live in the Bookstore. ${readers} added it.`
 }
 
-function PublishModal({
+export function PublishModal({
   book,
   listing,
   penName,
   onClose,
   onPublished
 }: {
-  book: BookDetail
+  book: Pick<BookDetail, 'id' | 'title' | 'blurb'>
   listing: MyListing | null
   penName: string | null
   onClose: () => void
@@ -175,46 +175,42 @@ function PublishModal({
   )
 }
 
+/** The way into publishing at the top of a book's page, beside sending it to someone. */
+export function PublishButton({
+  publishing
+}: {
+  publishing: BookPublishingState
+}): React.JSX.Element | null {
+  const { status, listing, member } = publishing
+  if (!status || status.phase === 'unavailable' || listing?.status === 'removed') return null
+  return (
+    <Button
+      icon={Store}
+      onClick={() => (member ? publishing.setOpen(true) : navigate(routes.bookstore()))}
+    >
+      {listing ? 'Update in Bookstore' : 'Publish'}
+    </Button>
+  )
+}
+
 /** Publishing a book of your own, and how it is getting on. */
 export function BookPublishing({
   book,
+  publishing,
   notify
 }: {
   book: BookDetail
+  publishing: BookPublishingState
   notify: (message: string) => void
 }): React.JSX.Element | null {
-  const [status, setStatus] = useState<BookstoreStatus | null>(null)
-  const [listings, setListings] = useState<MyListing[]>([])
-  const [open, setOpen] = useState(false)
-  const [error, setError] = useState('')
+  const { status, listing, member, open, error, setOpen } = publishing
 
-  const load = useCallback(async (): Promise<void> => {
-    const current = await storyboundApi().bookstore.status()
-    if (!current.ok) return
-    setStatus(current.data)
-    if (current.data.phase === 'signed-in' && current.data.joined) {
-      const mine = await storyboundApi().bookstore.myListings()
-      if (mine.ok) setListings(mine.data)
-    }
-  }, [])
-
-  useEffect(() => {
-    void Promise.resolve().then(load)
-  }, [load])
-
-  const withdraw = async (listing: MyListing): Promise<void> => {
-    setError('')
-    try {
-      setListings(unwrap(await storyboundApi().bookstore.withdraw(listing.id)))
-      notify('Withdrawn. People who already have it keep their copy.')
-    } catch (caught) {
-      setError(readableError(caught))
-    }
+  const withdraw = async (target: MyListing): Promise<void> => {
+    const message = await publishing.withdraw(target)
+    if (message) notify(message)
   }
 
   if (!status || status.phase === 'unavailable') return null
-  const listing = listings.find((item) => item.sourceBookId === book.id) ?? null
-  const member = status.phase === 'signed-in' && status.joined
   return (
     <section className="content-section" aria-labelledby="publish-heading">
       <div className="section-heading">
@@ -250,9 +246,7 @@ export function BookPublishing({
           penName={status.penName}
           onClose={() => setOpen(false)}
           onPublished={(next) => {
-            setListings(next)
-            setOpen(false)
-            void load()
+            publishing.published(next)
             notify('Sent for review. You will see the result here.')
           }}
         />
