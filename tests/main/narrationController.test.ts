@@ -61,6 +61,26 @@ function fakeGoogle(options: { failSpeechTimes?: number; status?: number } = {})
   return { fetchImpl: fetchImpl as unknown as typeof fetch, requests, audio }
 }
 
+/** Google's voice, with the day's allowance used up after a set number of passages. */
+function googleWithDailyLimit(passages: number): FakeGoogle {
+  const google = fakeGoogle()
+  let left = passages
+  const allowed = google.fetchImpl
+  const fetchImpl = (async (url: string, init: RequestInit) => {
+    if (!String(url).endsWith('/interactions')) return allowed(url, init)
+    if (left > 0) {
+      left -= 1
+      return allowed(url, init)
+    }
+    google.requests.push({ url: String(url), body: null })
+    return Response.json(
+      { error: { message: 'Too many requests' } },
+      { status: 429, headers: { 'retry-after': '85847' } }
+    )
+  }) as unknown as typeof fetch
+  return { ...google, fetchImpl }
+}
+
 function controller(google: FakeGoogle): {
   narration: NarrationController
   path: string
@@ -143,4 +163,27 @@ describe('listening on the Mac', () => {
     await expect(narration.synthesize({ text: 'No.', style: null })).rejects.toThrow('billing')
     expect(existsSync(join(path, 'narration-cache'))).toBe(false)
   }, 15_000)
+
+  it('stops asking Google once the day’s allowance is gone, and still plays what it has', async () => {
+    const google = googleWithDailyLimit(1)
+    const { narration } = controller(google)
+    await narration.setGeminiKey(KEY)
+    await narration.update({ engine: 'gemini', geminiConsent: true })
+    const speech = (): number =>
+      google.requests.filter((request) => request.url.endsWith('/interactions')).length
+
+    await narration.synthesize({ text: 'Heard before.', style: null })
+    await expect(narration.synthesize({ text: 'New.', style: null })).rejects.toMatchObject({
+      code: 'VOICE_LIMIT_REACHED',
+      message: expect.stringContaining('today’s allowance')
+    })
+    expect(speech()).toBe(2)
+    expect((await narration.status()).gemini.limitedUntil).not.toBeNull()
+
+    await expect(narration.synthesize({ text: 'Newer.', style: null })).rejects.toMatchObject({
+      code: 'VOICE_LIMIT_REACHED'
+    })
+    expect(speech()).toBe(2)
+    expect(await narration.synthesize({ text: 'Heard before.', style: null })).toBeTruthy()
+  })
 })

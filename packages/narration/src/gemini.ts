@@ -33,12 +33,48 @@ export class GeminiSpeechError extends Error {
   constructor(
     message: string,
     readonly status: number | null,
-    /** True when retrying later may work (rate limits, outages, a dropped connection). */
-    readonly retryable: boolean
+    /** True when retrying soon may work (rate limits, outages, a dropped connection). */
+    readonly retryable: boolean,
+    /** How long Google asked to wait, when it said. */
+    readonly retryAfterSeconds: number | null = null,
+    /** Set when the day's allowance is used up: when it comes back. */
+    readonly limitedUntil: Date | null = null
   ) {
     super(message)
     this.name = 'GeminiSpeechError'
   }
+}
+
+/** A wait this long can only be the daily limit; the per-minute one clears within a minute. */
+const DAILY_LIMIT_SECONDS = 600
+
+/** Daily limits reset at midnight Pacific time. */
+export function nextGeminiReset(now: Date): Date {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hourCycle: 'h23',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric'
+    }).formatToParts(now)
+    const part = (type: string): number =>
+      Number(parts.find((item) => item.type === type)?.value ?? 0)
+    const elapsed = part('hour') * 3600 + part('minute') * 60 + part('second')
+    return new Date(now.getTime() + (86_400 - elapsed) * 1000)
+  } catch {
+    return new Date(now.getTime() + 6 * 3_600_000)
+  }
+}
+
+/** What to tell someone once the day's allowance has gone. */
+export function geminiLimitMessage(limitedUntil: Date): string {
+  const time = limitedUntil.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `You have used today’s allowance for the Google voice. It comes back at ${time}.`
+}
+
+function dailyLimitError(status: number, limitedUntil: Date): GeminiSpeechError {
+  return new GeminiSpeechError(geminiLimitMessage(limitedUntil), status, false, null, limitedUntil)
 }
 
 type FetchLike = (
@@ -47,6 +83,7 @@ type FetchLike = (
 ) => Promise<{
   ok: boolean
   status: number
+  headers?: { get(name: string): string | null }
   json(): Promise<unknown>
   text(): Promise<string>
 }>
@@ -158,10 +195,18 @@ async function failure(response: Awaited<ReturnType<FetchLike>>): Promise<Gemini
     )
   }
   if (status === 429) {
+    const header = Number(response.headers?.get('retry-after'))
+    const retryAfter = Number.isFinite(header) && header > 0 ? header : null
+    const now = new Date()
+    if (retryAfter !== null && retryAfter >= DAILY_LIMIT_SECONDS) {
+      return dailyLimitError(status, new Date(now.getTime() + retryAfter * 1000))
+    }
+    if (/per[ _-]?day|daily/i.test(detail)) return dailyLimitError(status, nextGeminiReset(now))
     return new GeminiSpeechError(
       'Google is limiting requests just now. Trying again shortly.',
       status,
-      true
+      true,
+      retryAfter
     )
   }
   if (status >= 500) {

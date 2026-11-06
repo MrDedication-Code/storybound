@@ -786,6 +786,8 @@ export interface NarrationStatus {
     /** The default reading style; a paragraph's own performance note replaces it. */
     style: string
     model: string
+    /** Set once the day's allowance is used up: when the Google voice works again. */
+    limitedUntil: string | null
   }
   /** Kokoro, the free voice that runs on this computer once downloaded. */
   kokoro: {

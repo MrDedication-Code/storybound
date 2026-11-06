@@ -38,6 +38,10 @@ export interface NowPlaying {
 export interface ListeningVoice {
   speak(segment: NarrationSegment): Promise<string>
   silence(seconds: number): Promise<string>
+  /** For a voice with few requests a day: fewer, longer passages, and less made ahead. */
+  metered?: boolean
+  /** The voice to carry on with once this one's daily allowance runs out, if there is one. */
+  whenLimited?(): Promise<ListeningVoice | null>
 }
 
 export type ListeningStatus = 'idle' | 'loading' | 'playing' | 'paused'
@@ -67,6 +71,8 @@ const IDLE: ListeningSnapshot = {
 
 /** Passages made ready ahead of the one playing, so there is no gap between them. */
 const PREPARE_AHEAD = 4
+/** Long passages play for minutes, so two are plenty, and little is wasted if listening stops. */
+const METERED_PREPARE_AHEAD = 2
 /** Times a passage is asked for again after a network or busy error before listening stops. */
 const RETRIES = 4
 /** Played while waiting to ask again: the phone's timers stop with the screen off, sound doesn't. */
@@ -330,7 +336,8 @@ export class ListeningSession {
       while (
         generation === this.generation &&
         !this.halted &&
-        (this.waiting || this.unplayed() < PREPARE_AHEAD)
+        (this.waiting ||
+          this.unplayed() < (this.voice.metered ? METERED_PREPARE_AHEAD : PREPARE_AHEAD))
       ) {
         const item = await this.nextItem(generation)
         if (generation !== this.generation) return
@@ -375,6 +382,10 @@ export class ListeningSession {
     item: { segment: NarrationSegment } & Omit<Track, 'segment'>,
     generation: number
   ): Promise<void> {
+    if (error instanceof GeminiSpeechError && error.limitedUntil) {
+      await this.voiceLimitReached(error, item, generation)
+      return
+    }
     const retryable = error instanceof GeminiSpeechError ? error.retryable : true
     if (retryable && this.retries < RETRIES) {
       this.retries += 1
@@ -396,6 +407,39 @@ export class ListeningSession {
       error: `${message} Press play to try again.`,
       status: this.waiting || this.unplayed() === 0 ? 'paused' : this.snapshot.status
     })
+  }
+
+  /** Hands over to the free voice from the same place, or stops and says why. */
+  private async voiceLimitReached(
+    error: GeminiSpeechError,
+    item: { segment: NarrationSegment } & Omit<Track, 'segment'>,
+    generation: number
+  ): Promise<void> {
+    const replacement = await this.voice?.whenLimited?.().catch(() => null)
+    if (generation !== this.generation) return
+    this.producing = false
+    if (!replacement) {
+      this.halted = true
+      this.update({
+        error: `${error.message} Download the free voice in Listening settings to keep going.`,
+        status: this.waiting || this.unplayed() === 0 ? 'paused' : this.snapshot.status
+      })
+      return
+    }
+    this.voice = replacement
+    const script = await this.loadScript(item.chapterIndex)
+    if (generation !== this.generation) return
+    if (script) {
+      // The free voice divides a chapter differently, so find the same place in its passages.
+      this.script = script
+      this.nextSegment = segmentAtProgress(
+        script.segments,
+        segmentProgress(item.segment, item.contentLength),
+        script.contentLength
+      )
+    }
+    this.update({ error: `${error.message} The free voice will read until then.` })
+    void this.fill(generation)
   }
 
   private async nextItem(
@@ -436,7 +480,10 @@ export class ListeningSession {
       chapterId: chapter.id,
       title: chapter.title,
       contentLength: chapter.content.length,
-      segments: buildNarrationScript({ title: chapter.title, content: chapter.content })
+      segments: buildNarrationScript(
+        { title: chapter.title, content: chapter.content },
+        { longPassages: this.voice?.metered === true }
+      )
     }
   }
 

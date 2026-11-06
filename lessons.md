@@ -76,3 +76,4 @@
 - In electron-builder `files` rules, `${platform}` is the computer doing the build, not the target; a Windows build made on a Mac keeps the Mac binaries. Exclude per target in `electron-builder.cjs`, and check the built output, since the build itself succeeds either way.
 - `.env.local` is not in the repository, so anything built on GitHub has no sync unless the workflow passes the `STORYBOUND_SUPABASE_*` repository variables. `scripts/check-packaged-app.mjs` now fails such a build; a build can look perfect and still say "local-only".
 - Claude does not always receive the connection's own instructions, only its tools. Anything Claude must know goes in a tool description or `get_writing_guide`, not only in `MCP_SERVER_INSTRUCTIONS`.
+- Gemini TTS counts requests per day, not text, so a passage is a request however long it is. Check request limits as well as price when sizing work for a paid API; a cost estimate alone missed this.

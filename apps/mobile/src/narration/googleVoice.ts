@@ -1,6 +1,7 @@
 import {
   GEMINI_TTS_MODEL,
   GeminiSpeechError,
+  geminiLimitMessage,
   listGeminiVoices,
   synthesizeWithGemini,
   type GeminiVoice,
@@ -46,8 +47,34 @@ export async function createGoogleVoice(): Promise<{
           style: segment.style ?? settings.geminiStyle,
           voice: settings.geminiVoiceId
         }),
-      silence: silenceAudio
+      silence: silenceAudio,
+      metered: true,
+      whenLimited: async () =>
+        (await kokoroInstalled()) ? createKokoroVoice(settings.kokoroVoiceId) : null
     }
+  }
+}
+
+/** Kept in memory only: after a restart, one refused request finds the limit again. */
+let limitedUntil: Date | null = null
+
+async function askGoogle(
+  key: string,
+  input: { text: string; style: string; voice: string }
+): Promise<Uint8Array> {
+  // Audio heard before still plays. New audio cannot, so Google is not asked again.
+  if (limitedUntil && limitedUntil > new Date()) {
+    throw new GeminiSpeechError(geminiLimitMessage(limitedUntil), 429, false, null, limitedUntil)
+  }
+  try {
+    return await synthesizeWithGemini(fetch, key, {
+      text: input.text,
+      style: input.style || null,
+      voice: input.voice
+    })
+  } catch (error) {
+    if (error instanceof GeminiSpeechError && error.limitedUntil) limitedUntil = error.limitedUntil
+    throw error
   }
 }
 
@@ -57,7 +84,7 @@ export function speakWithGoogle(
 ): Promise<string> {
   const style = input.style.trim()
   return cachedAudio(['gemini', GEMINI_TTS_MODEL, input.voice, style, input.text], () =>
-    synthesizeWithGemini(fetch, key, { text: input.text, style: style || null, voice: input.voice })
+    askGoogle(key, { ...input, style })
   )
 }
 

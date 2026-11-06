@@ -6,6 +6,7 @@ export type StoryboundErrorCode =
   | 'CONFLICT'
   | 'DATABASE_ERROR'
   | 'NETWORK_ERROR'
+  | 'VOICE_LIMIT_REACHED'
   | 'FILE_ERROR'
   | 'IMPORT_ERROR'
   | 'INTEGRITY_ERROR'

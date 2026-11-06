@@ -50,7 +50,7 @@ const book: BookDetail = {
 } as unknown as BookDetail
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- a test fixture
-function setup(options: { failures?: unknown[] } = {}) {
+function setup(options: { failures?: unknown[]; voice?: Partial<ListeningVoice> } = {}) {
   const saved: SaveReadingStateInput[] = []
   const repository = {
     getBook: async () => book,
@@ -101,7 +101,8 @@ function setup(options: { failures?: unknown[] } = {}) {
       spoken.push(segment.plainText)
       return `speech:${segment.plainText}`
     },
-    silence: async (seconds) => `silence:${seconds}`
+    silence: async (seconds) => `silence:${seconds}`,
+    ...options.voice
   }
 
   /** The playing file ends: the player moves on, or reports the queue finished. */
@@ -198,5 +199,56 @@ describe('listening session', () => {
     expect(session.current.status).toBe('idle')
     expect(session.current.bookId).toBeNull()
     expect(controls.at(-1)).toBeNull()
+  })
+
+  describe('when the day’s Google allowance runs out', () => {
+    const limit = new GeminiSpeechError(
+      'You have used today’s allowance for the Google voice. It comes back at 8:00 AM.',
+      429,
+      false,
+      null,
+      new Date(Date.now() + 3_600_000)
+    )
+
+    it('carries on with the free voice from the same place', async () => {
+      const free: string[] = []
+      const { session, start, queue } = setup({
+        failures: [limit],
+        voice: {
+          metered: true,
+          whenLimited: async () => ({
+            speak: async (segment) => {
+              free.push(segment.plainText)
+              return `free:${segment.plainText}`
+            },
+            silence: async (seconds) => `silence:${seconds}`
+          })
+        }
+      })
+
+      await start()
+      await settle()
+      await settle()
+
+      expect(free.length).toBeGreaterThan(0)
+      expect(queue[0]).toMatch(/^free:/)
+      expect(session.current.status).toBe('playing')
+      expect(session.current.error).toContain('free voice will read until then')
+    })
+
+    it('stops and says why when there is no free voice, without asking Google again', async () => {
+      const { session, start, spoken } = setup({
+        failures: [limit],
+        voice: { metered: true, whenLimited: async () => null }
+      })
+
+      await start()
+      await settle()
+
+      expect(session.current.status).toBe('paused')
+      expect(session.current.error).toContain('today’s allowance')
+      expect(session.current.error).toContain('Download the free voice')
+      expect(spoken).toEqual([])
+    })
   })
 })

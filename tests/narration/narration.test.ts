@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   base64ToBytes,
   buildNarrationScript,
+  nextGeminiReset,
+  type GeminiSpeechError,
   geminiAudioFromResponse,
   geminiSpeechBody,
   GeminiSpeechError,
@@ -67,6 +69,66 @@ describe('narration script', () => {
     expect(content.slice(script[4].start, script[4].end)).toBe(
       '[[hushed, gravelly, urgent]] Get down. [[gasp]] Now!'
     )
+  })
+
+  describe('long passages, for a voice that counts requests', () => {
+    const paragraph = 'She counted the ledgers again and found the same missing cent. '.repeat(6)
+    const chapter = {
+      title: 'Chapter 2',
+      content: Array.from({ length: 40 }, () => paragraph.trim()).join('\n\n')
+    }
+    const spoken = (options = {}): string[] =>
+      buildNarrationScript(chapter, options)
+        .filter((segment) => segment.kind === 'speech')
+        .map((segment) => segment.text)
+
+    it('needs far fewer passages, and starts with a short one that includes the title', () => {
+      const short = spoken()
+      const long = spoken({ longPassages: true })
+      expect(long.length).toBeLessThan(short.length / 2.5)
+      expect(long[0].startsWith('Chapter 2\n\n')).toBe(true)
+      expect(long[0].length).toBeLessThan(800)
+      expect(Math.max(...long.map((text) => text.length))).toBeLessThanOrEqual(2600)
+    })
+
+    it('keeps every word, in order', () => {
+      const script = buildNarrationScript(chapter, { longPassages: true })
+      const words = script
+        .map((segment) => segment.plainText)
+        .join(' ')
+        .match(/\S+/g)
+      expect(words?.slice(2)).toEqual(chapter.content.match(/\S+/g))
+    })
+
+    it('keeps directions apart, and pauses inside passages', () => {
+      const script = buildNarrationScript(
+        {
+          title: '',
+          content: [
+            'First.',
+            'Second.',
+            '* * *',
+            'Third.',
+            '[[long pause]]',
+            'Fourth.',
+            '[[hushed]] Whispered.',
+            'Last.'
+          ].join('\n\n')
+        },
+        { longPassages: true }
+      )
+      expect(script.map((segment) => [segment.text, segment.style])).toEqual([
+        ['First.\n\nSecond.\n\n<long pause>\n\nThird.\n\n<long pause>\n\nFourth.', null],
+        ['Whispered.', 'hushed'],
+        ['Last.', null]
+      ])
+    })
+
+    it('leaves other voices exactly as they were', () => {
+      expect(buildNarrationScript(chapter, { longPassages: false })).toEqual(
+        buildNarrationScript(chapter)
+      )
+    })
   })
 
   it('splits long paragraphs at sentence ends and resumes from a reading position', () => {
@@ -183,5 +245,48 @@ describe('Google voice', () => {
     await expect(
       synthesizeWithGemini(reply(429, {}), 'key', { text: 'a', style: null, voice: 'Riko' })
     ).rejects.toMatchObject({ retryable: true })
+  })
+
+  describe('when Google limits requests', () => {
+    const limited = (retryAfter: string | null, message = ''): typeof fetch =>
+      (async () => ({
+        ok: false,
+        status: 429,
+        headers: { get: () => retryAfter },
+        json: async () => ({ error: { message } }),
+        text: async () => ''
+      })) as unknown as typeof fetch
+    const speak = (fetchImpl: typeof fetch): Promise<Uint8Array> =>
+      synthesizeWithGemini(fetchImpl, 'key', { text: 'a', style: null, voice: 'Riko' })
+
+    it('recognises the daily limit from a long wait, and does not retry it', async () => {
+      const error = await speak(limited('85847')).catch((caught: unknown) => caught)
+      expect(error).toMatchObject({ retryable: false })
+      const until = (error as GeminiSpeechError).limitedUntil
+      expect(until!.getTime()).toBeGreaterThan(Date.now() + 85_000_000)
+      expect((error as Error).message).toContain('today’s allowance')
+    })
+
+    it('recognises the daily limit from Google’s words', async () => {
+      const error = await speak(limited(null, 'Limit of 100 requests per day reached')).catch(
+        (caught: unknown) => caught
+      )
+      expect((error as GeminiSpeechError).limitedUntil).toBeInstanceOf(Date)
+    })
+
+    it('treats the per-minute limit as something to wait out', async () => {
+      await expect(speak(limited('20'))).rejects.toMatchObject({
+        retryable: true,
+        retryAfterSeconds: 20,
+        limitedUntil: null
+      })
+    })
+
+    it('works out the next midnight in California', () => {
+      // 07:30 UK on 6 November is 23:30 the evening before in Los Angeles.
+      expect(nextGeminiReset(new Date('2026-11-06T07:30:00Z')).toISOString()).toBe(
+        '2026-11-06T08:00:00.000Z'
+      )
+    })
   })
 })

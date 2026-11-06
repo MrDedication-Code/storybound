@@ -21,6 +21,11 @@ export interface NarrationSegment {
 const MAX_SEGMENT_CHARACTERS = 1200
 /** Short neighbouring paragraphs without directions are read together, so dialogue flows. */
 const MERGE_UP_TO_CHARACTERS = 700
+/**
+ * Google counts every passage as a request and allows few a day, however long each one is, so its
+ * passages are as long as it reads well. The first stays short so listening starts quickly.
+ */
+const LONG_PASSAGE_CHARACTERS = 2600
 const SCENE_BREAK = /^(?:\*\s*){3,}$|^(?:-\s*){3,}$|^(?:_\s*){3,}$/u
 
 function cleanMarkdown(text: string): string {
@@ -44,13 +49,13 @@ function withoutNotes(text: string): string {
   return text.replace(PERFORMANCE_NOTE, ' ').replace(/[ \t]{2,}/g, ' ')
 }
 
-function splitLong(text: string): string[] {
-  if (text.length <= MAX_SEGMENT_CHARACTERS) return [text]
+function splitLong(text: string, maximum: number): string[] {
+  if (text.length <= maximum) return [text]
   const sentences = text.match(/[^.!?…]+(?:[.!?…]+["'”’)\]]*|$)\s*/gu) ?? [text]
   const parts: string[] = []
   let current = ''
   for (const sentence of sentences) {
-    if (current && current.length + sentence.length > MAX_SEGMENT_CHARACTERS) {
+    if (current && current.length + sentence.length > maximum) {
       parts.push(current.trim())
       current = ''
     }
@@ -87,10 +92,15 @@ function blocksOf(content: string): Block[] {
  * Turns a chapter into the passages a voice reads, in order, starting with its title. Each
  * passage keeps its place in the chapter so listening can follow and save the reading position.
  */
-export function buildNarrationScript(chapter: {
-  title: string
-  content: string
-}): NarrationSegment[] {
+export function buildNarrationScript(
+  chapter: {
+    title: string
+    content: string
+  },
+  options: { longPassages?: boolean } = {}
+): NarrationSegment[] {
+  const long = options.longPassages === true
+  const maximum = long ? LONG_PASSAGE_CHARACTERS : MAX_SEGMENT_CHARACTERS
   const segments: Omit<NarrationSegment, 'index'>[] = []
   const title = cleanMarkdown(chapter.title)
   let titleSegment: Omit<NarrationSegment, 'index'> | null = null
@@ -105,19 +115,42 @@ export function buildNarrationScript(chapter: {
       end: 0
     }
     segments.push(titleSegment)
-    segments.push({
-      kind: 'pause',
-      text: '',
-      plainText: '',
-      style: null,
-      pause: 0.9,
-      start: 0,
-      end: 0
-    })
+    // With long passages the title is read as part of the first one, which saves a request.
+    if (!long) {
+      segments.push({
+        kind: 'pause',
+        text: '',
+        plainText: '',
+        style: null,
+        pause: 0.9,
+        start: 0,
+        end: 0
+      })
+    }
+  }
+
+  /** Whether a passage has room for more, keeping the very first one short. */
+  const roomFor = (
+    previous: Omit<NarrationSegment, 'index'> | undefined,
+    length: number
+  ): previous is Omit<NarrationSegment, 'index'> => {
+    if (previous?.kind !== 'speech' || previous.style !== null) return false
+    if (!long)
+      return previous !== titleSegment && previous.text.length + length < MERGE_UP_TO_CHARACTERS
+    const first = segments.filter((segment) => segment.kind === 'speech').length === 1
+    return previous.text.length + length < (first ? MERGE_UP_TO_CHARACTERS : maximum)
   }
 
   for (const block of blocksOf(chapter.content)) {
     if (SCENE_BREAK.test(block.raw)) {
+      // Google performs a pause inside a passage, so a scene break need not end one.
+      const before = segments.at(-1)
+      if (long && roomFor(before, 0)) {
+        before.text = `${before.text}\n\n<long pause>`
+        before.plainText = `${before.plainText}\n\n`
+        before.end = block.end
+        continue
+      }
       segments.push({
         kind: 'pause',
         text: '',
@@ -133,6 +166,12 @@ export function buildNarrationScript(chapter: {
     const onlyNote = block.raw.match(/^\[\[([^[\]\n]{1,120})\]\]$/)
     const pause = onlyNote ? pauseSeconds(onlyNote[1]) : null
     if (pause !== null) {
+      const before = segments.at(-1)
+      if (long && roomFor(before, 0)) {
+        before.text = `${before.text}\n\n<${onlyNote?.[1].trim().toLowerCase()}>`
+        before.end = block.end
+        continue
+      }
       segments.push({
         kind: 'pause',
         text: '',
@@ -149,20 +188,14 @@ export function buildNarrationScript(chapter: {
     if (!withoutNotes(cleaned).trim()) continue
 
     const previous = segments.at(-1)
-    const canMerge =
-      previous?.kind === 'speech' &&
-      previous !== titleSegment &&
-      previous.style === null &&
-      direction.style === null &&
-      previous.text.length + cleaned.length < MERGE_UP_TO_CHARACTERS
-    if (canMerge && previous) {
+    if (direction.style === null && roomFor(previous, cleaned.length)) {
       previous.text = `${previous.text}\n\n${voiceTags(cleaned)}`
       previous.plainText = `${previous.plainText}\n\n${withoutNotes(cleaned).trim()}`
       previous.end = block.end
       continue
     }
 
-    const parts = splitLong(cleaned)
+    const parts = splitLong(cleaned, maximum)
     const span = block.end - block.start
     parts.forEach((part, partIndex) => {
       // A split paragraph's parts share its place, spread evenly, which is close enough to

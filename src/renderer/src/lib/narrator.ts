@@ -14,20 +14,33 @@ export interface NarratorEvents {
   /** The last passage finished; the reader moves on to the next chapter. */
   onChapterEnd(): void
   onError(message: string): void
+  /** The voice's daily allowance ran out. The reader may carry on with another voice. */
+  onVoiceLimit(message: string): void
 }
 
 /** How a passage becomes sound: Google's voice returns audio, the system voice speaks itself. */
 export type NarratorVoice =
-  { kind: 'audio'; synthesize(segment: NarrationSegment): Promise<Uint8Array> } | { kind: 'system' }
+  | {
+      kind: 'audio'
+      /** Changes only when the voice does, so a refresh does not restart the passage. */
+      id: string
+      /** For a voice with few requests a day: fewer, longer passages, and less made ahead. */
+      metered?: boolean
+      synthesize(segment: NarrationSegment): Promise<Uint8Array>
+    }
+  | { kind: 'system'; id: 'system' }
 
 /** Passages prepared ahead of the one playing, so there is no gap between them. */
 const PREPARE_AHEAD = 3
+/** Long passages play for minutes, so one is enough, and little is wasted if listening stops. */
+const METERED_PREPARE_AHEAD = 1
 
 /**
  * Reads a chapter passage by passage. Kept outside React so playback carries on while the reader
  * re-renders, and so the next chapter can pick up where this one ends.
  */
 export class Narrator {
+  private chapter: { title: string; content: string } | null = null
   private segments: NarrationSegment[] = []
   private contentLength = 0
   private index = 0
@@ -53,19 +66,35 @@ export class Narrator {
     return this.segments[this.index] ?? null
   }
 
-  setVoice(voice: NarratorVoice): void {
-    const wasPlaying = this.state === 'playing' || this.state === 'loading'
+  setVoice(voice: NarratorVoice, resume = false): void {
+    if (voice.id === this.voice.id) return
+    const wasPlaying = resume || this.state === 'playing' || this.state === 'loading'
+    const place = this.current
     this.halt()
     this.voice = voice
     this.forgetPrepared()
+    if (this.chapter) {
+      // Voices can divide a chapter differently, so find the same place in the new passages.
+      this.segments = this.script(this.chapter)
+      if (place) {
+        const progress = segmentProgress(place, this.contentLength)
+        this.index = segmentAtProgress(this.segments, progress, this.contentLength)
+      }
+    }
     if (wasPlaying) void this.playCurrent()
+  }
+
+  /** Gives up after a voice ran out and nothing can take over. */
+  giveUp(message: string): void {
+    this.fail(message)
   }
 
   /** Loads a chapter and starts from the passage at a reading position (0 to 1). */
   load(chapter: { title: string; content: string }, progress = 0): void {
     this.halt()
     this.forgetPrepared()
-    this.segments = buildNarrationScript(chapter)
+    this.chapter = chapter
+    this.segments = this.script(chapter)
     this.contentLength = chapter.content.length
     this.index = progress > 0 ? segmentAtProgress(this.segments, progress, this.contentLength) : 0
     this.setState('idle')
@@ -172,7 +201,7 @@ export class Narrator {
     this.setState('loading')
     try {
       const url = await this.prepare(this.index)
-      for (let ahead = 1; ahead <= PREPARE_AHEAD; ahead += 1) {
+      for (let ahead = 1; ahead <= this.prepareAhead; ahead += 1) {
         void this.prepare(this.index + ahead).catch(() => undefined)
       }
       if (generation !== this.generation) return
@@ -181,10 +210,22 @@ export class Narrator {
       await this.audio.play()
       if (generation === this.generation) this.setState('playing')
     } catch (error) {
-      if (generation === this.generation) {
-        this.fail(error instanceof Error ? error.message : 'This passage could not be read.')
+      if (generation !== this.generation) return
+      if ((error as { code?: string }).code === 'VOICE_LIMIT_REACHED') {
+        this.events.onVoiceLimit((error as Error).message)
+        return
       }
+      this.fail(error instanceof Error ? error.message : 'This passage could not be read.')
     }
+  }
+
+  private get prepareAhead(): number {
+    return this.voice.kind === 'audio' && this.voice.metered ? METERED_PREPARE_AHEAD : PREPARE_AHEAD
+  }
+
+  private script(chapter: { title: string; content: string }): NarrationSegment[] {
+    const longPassages = this.voice.kind === 'audio' && this.voice.metered === true
+    return buildNarrationScript(chapter, { longPassages })
   }
 
   private prepare(index: number): Promise<string> {
@@ -226,7 +267,7 @@ export class Narrator {
 
   private trimPrepared(): void {
     for (const [index, pending] of this.prepared) {
-      if (index < this.index || index > this.index + PREPARE_AHEAD) {
+      if (index < this.index || index > this.index + this.prepareAhead) {
         this.prepared.delete(index)
         void pending.then((url) => url && URL.revokeObjectURL(url)).catch(() => undefined)
       }

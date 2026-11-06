@@ -12,6 +12,7 @@ import {
   GEMINI_DEFAULT_VOICE,
   GEMINI_TTS_MODEL,
   GeminiSpeechError,
+  geminiLimitMessage,
   listGeminiVoices,
   synthesizeWithGemini,
   type GeminiVoice
@@ -35,6 +36,7 @@ const KOKORO_FOLDER = join('voices', 'kokoro')
 /** Cached audio is trimmed, oldest listened-to first, once it passes this size. */
 const CACHE_LIMIT_BYTES = 1.5 * 1024 * 1024 * 1024
 const RETRY_DELAYS_MS = [2000, 6000]
+const MAX_RETRY_WAIT_SECONDS = 60
 
 // Kept beside the database rather than in it: listening preferences are per computer, and the
 // API key never enters backups, packages, or sync.
@@ -85,6 +87,8 @@ export class NarrationController {
   private readonly credentials: SecureCredentialStorage
   private readonly cachePath: string
   private readonly kokoro: KokoroEngine
+  /** Kept in memory only: after a restart, one refused request finds the limit again. */
+  private limitedUntil: Date | null = null
 
   constructor(
     private readonly dataPath: string,
@@ -109,7 +113,8 @@ export class NarrationController {
         voiceId: this.settings.geminiVoiceId,
         voiceName: this.settings.geminiVoiceName,
         style: this.settings.geminiStyle,
-        model: GEMINI_TTS_MODEL
+        model: GEMINI_TTS_MODEL,
+        limitedUntil: this.currentLimit()?.toISOString() ?? null
       },
       kokoro: {
         installed: await this.kokoro.isInstalled(),
@@ -260,20 +265,35 @@ export class NarrationController {
       // Not heard before.
     }
 
+    // Audio heard before still plays above. New audio cannot, so Google is not asked again.
+    const limit = this.currentLimit()
+    if (limit) throw new StoryboundError('VOICE_LIMIT_REACHED', geminiLimitMessage(limit))
+
     let audio: Uint8Array | null = null
     for (let attempt = 0; audio === null; attempt += 1) {
       try {
         audio = await synthesizeWithGemini(this.fetchImpl, key, { text: input.text, style, voice })
       } catch (error) {
+        if (error instanceof GeminiSpeechError && error.limitedUntil) {
+          this.limitedUntil = error.limitedUntil
+          throw new StoryboundError('VOICE_LIMIT_REACHED', error.message, error)
+        }
         const retry = error instanceof GeminiSpeechError && error.retryable
         if (!retry || attempt >= RETRY_DELAYS_MS.length) throw this.toStoryboundError(error)
-        await wait(RETRY_DELAYS_MS[attempt])
+        const asked = error instanceof GeminiSpeechError ? (error.retryAfterSeconds ?? 0) : 0
+        await wait(
+          Math.max(RETRY_DELAYS_MS[attempt], Math.min(asked, MAX_RETRY_WAIT_SECONDS) * 1000)
+        )
       }
     }
     await mkdir(this.cachePath, { recursive: true })
     await writeFile(cacheFile, audio)
     void this.trimCache().catch(() => undefined)
     return audio
+  }
+
+  private currentLimit(): Date | null {
+    return this.limitedUntil && this.limitedUntil > new Date() ? this.limitedUntil : null
   }
 
   private async trimCache(): Promise<void> {

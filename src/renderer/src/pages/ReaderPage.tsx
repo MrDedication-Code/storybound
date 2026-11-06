@@ -523,33 +523,59 @@ export function ReaderPage({
     }
   }
 
-  const narratorVoice = (status: NarrationStatus | null): NarratorVoice =>
-    status?.engine === 'kokoro' && status.kokoro.installed
-      ? {
-          kind: 'audio',
-          // The free voice reads the words; performance notes are for Google's voice.
-          synthesize: async (segment) =>
-            unwrap(
-              await storyboundApi().narration.synthesize({
-                text: segment.plainText,
-                style: null,
-                engine: 'kokoro'
-              })
-            )
-        }
-      : status?.engine === 'gemini' && status.gemini.hasKey && status.gemini.consented
-        ? {
-            kind: 'audio',
-            synthesize: async (segment) =>
-              unwrap(
-                await storyboundApi().narration.synthesize({
-                  text: segment.text,
-                  style: segment.style,
-                  engine: 'gemini'
-                })
-              )
-          }
-        : { kind: 'system' }
+  const narratorVoice = (status: NarrationStatus | null): NarratorVoice => {
+    const googleChosen =
+      status?.engine === 'gemini' && status.gemini.hasKey && status.gemini.consented
+    const googleLimited = googleChosen && status.gemini.limitedUntil !== null
+    if (status?.kokoro.installed && (status.engine === 'kokoro' || googleLimited)) {
+      return {
+        kind: 'audio',
+        id: `kokoro:${status.kokoro.voiceId}`,
+        // The free voice reads the words; performance notes are for Google's voice.
+        synthesize: async (segment) =>
+          unwrap(
+            await storyboundApi().narration.synthesize({
+              text: segment.plainText,
+              style: null,
+              engine: 'kokoro'
+            })
+          )
+      }
+    }
+    if (googleChosen) {
+      return {
+        kind: 'audio',
+        id: `gemini:${status.gemini.voiceId}:${status.gemini.style}`,
+        metered: true,
+        synthesize: async (segment) =>
+          unwrap(
+            await storyboundApi().narration.synthesize({
+              text: segment.text,
+              style: segment.style,
+              engine: 'gemini'
+            })
+          )
+      }
+    }
+    return { kind: 'system', id: 'system' }
+  }
+
+  /** Google's allowance ran out: the free voice carries on if it is there. */
+  const voiceLimitReached = useEffectEvent(async (message: string): Promise<void> => {
+    const narrator = narratorRef.current
+    try {
+      const status = unwrap(await storyboundApi().narration.status())
+      setNarration(status)
+      if (status.kokoro.installed) {
+        narrator?.setVoice(narratorVoice(status), true)
+        notify(`${message} The free voice will read until then.`)
+        return
+      }
+    } catch {
+      // The message below still says what happened.
+    }
+    narrator?.giveUp(`${message} Download the free voice in Settings → Listening to keep going.`)
+  })
 
   const followPassage = useEffectEvent((progress: number): void => {
     // The page follows the voice, and where it has got to becomes the reading position.
@@ -581,12 +607,13 @@ export function ReaderPage({
 
   useEffect(() => {
     const narrator = new Narrator(
-      { kind: 'system' },
+      { kind: 'system', id: 'system' },
       {
         onState: setSpeechState,
         onPassage: (_segment, progress) => followPassage(progress),
         onChapterEnd: () => finishChapter(),
-        onError: setError
+        onError: setError,
+        onVoiceLimit: (message) => void voiceLimitReached(message)
       }
     )
     narratorRef.current = narrator
@@ -690,7 +717,7 @@ export function ReaderPage({
   const voiceLabel =
     narratorVoice(narration).kind === 'system'
       ? 'System voice'
-      : narration?.engine === 'kokoro'
+      : narratorVoice(narration).id.startsWith('kokoro')
         ? `${kokoroName} · free voice`
         : `${narration?.gemini.voiceName ?? 'Google'} · Google`
 

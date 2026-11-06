@@ -481,6 +481,32 @@ export function ListeningGuide(): React.JSX.Element {
         working when the credit runs out.
       </p>
 
+      <h3>The Google voice’s daily limit</h3>
+      <p>
+        Google limits how many passages it will make each day, however long they are. A new account
+        gets about 100, which is around eight chapters or nearly three hours of listening. The limit
+        is shared by your computer and phone, and comes back at midnight Pacific time, which is 8am
+        in the UK.
+      </p>
+      <ul>
+        <li>
+          <strong>When it runs out:</strong> anything you have heard before still plays. If you have
+          downloaded the free voice, it carries on from the same place until the limit resets, so
+          download it even if you prefer the Google voice.
+        </li>
+        <li>
+          <strong>See where you are:</strong> open{' '}
+          <ExternalLink href="https://aistudio.google.com/rate-limit">
+            aistudio.google.com/rate-limit
+          </ExternalLink>{' '}
+          and choose Gemini 3.8 Flash TTS.
+        </li>
+        <li>
+          <strong>Use it wisely:</strong> each paragraph with a performance note is its own passage,
+          and previewing voices counts too.
+        </li>
+      </ul>
+
       <h3>Performance notes</h3>
       <p>
         These are hidden directions for the voice, also called audible description. They are heard
