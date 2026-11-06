@@ -1,6 +1,6 @@
 {
   "name": "storybound",
-  "version": "0.6.0-test.1",
+  "version": "0.6.0-test.2",
   "description": "A calm, local-first library for AI-generated stories",
   "private": true,
   "workspaces": [
