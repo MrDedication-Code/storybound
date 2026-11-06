@@ -81,6 +81,7 @@ export function SettingsPage({
   const [busy, setBusy] = useState('')
   const [reload, setReload] = useState(0)
   const [restoreConfirm, setRestoreConfirm] = useState(false)
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState(false)
   const [rotateRecoveryConfirm, setRotateRecoveryConfirm] = useState(false)
   const [encryptedTransfer, setEncryptedTransfer] = useState<'export' | 'restore' | null>(null)
   const [vaultPassphrase, setVaultPassphrase] = useState('')
@@ -912,6 +913,18 @@ export function SettingsPage({
                 without it: <strong>{newRecoveryCode}</strong>
               </InlineNotice>
             ) : null}
+            {syncStatus?.accountEmail ? (
+              <div className="settings-account">
+                <span>Signed in as {syncStatus.accountEmail}</span>
+                <Button
+                  disabled={Boolean(busy)}
+                  variant="quiet"
+                  onClick={() => setDeleteAccountConfirm(true)}
+                >
+                  Delete account
+                </Button>
+              </div>
+            ) : null}
           </section>
 
           <ListeningSettings notify={notify} />
@@ -1193,6 +1206,25 @@ export function SettingsPage({
         <Button className="settings-back-to-top" icon={ArrowUp} onClick={scrollToTop}>
           Back to top
         </Button>
+      ) : null}
+      {deleteAccountConfirm ? (
+        <ConfirmDialog
+          busy={busy === 'delete-account'}
+          confirmLabel="Delete my account"
+          dangerous
+          description="This removes your account, your synced data and your published books from the server. It can’t be undone. The books on this device stay here."
+          onClose={() => setDeleteAccountConfirm(false)}
+          onConfirm={async () => {
+            await runOperation('delete-account', async () => {
+              setSyncStatus(unwrap(await storyboundApi().sync.deleteAccount()))
+              setSyncDevices([])
+              setSyncConflicts([])
+              return { message: 'Your account was deleted. Your books are still on this device.' }
+            })
+            setDeleteAccountConfirm(false)
+          }}
+          title="Delete your account?"
+        />
       ) : null}
       {restoreConfirm ? (
         <ConfirmDialog

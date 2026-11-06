@@ -7,6 +7,7 @@ import {
   Search,
   Settings,
   Trash2,
+  Store,
   X
 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -15,7 +16,7 @@ import { navigate, routes } from '../lib/routing'
 import { Button, IconButton, VisuallyHidden } from './ui'
 
 interface AppShellProps {
-  active: 'library' | 'book' | 'editor' | 'search' | 'trash' | 'settings'
+  active: 'library' | 'book' | 'editor' | 'search' | 'bookstore' | 'trash' | 'settings'
   children: ReactNode
   onAddBook: () => void
   onHelp: () => void
@@ -101,6 +102,14 @@ export function AppShell({
             Library
           </button>
           <button
+            aria-current={active === 'bookstore' ? 'page' : undefined}
+            className={active === 'bookstore' ? 'is-active' : ''}
+            onClick={() => go(routes.bookstore())}
+          >
+            <Store aria-hidden="true" size={19} />
+            Bookstore
+          </button>
+          <button
             aria-current={active === 'trash' ? 'page' : undefined}
             className={active === 'trash' ? 'is-active' : ''}
             onClick={() => go(routes.trash())}
@@ -127,8 +136,8 @@ export function AppShell({
           </button>
         </nav>
         <div className="sidebar__footer">
-          <p>Local by design</p>
-          <span>Online only when you explicitly approve an AI request.</span>
+          <p>Your books stay yours</p>
+          <span>Kept on this device. Online only for the features you choose.</span>
         </div>
       </aside>
 

@@ -76,9 +76,18 @@
 - **Share fields are optional in book records:** a record from an older version leaves them untouched, so an old phone cannot unlock a book.
 - **Sounds are generated in the app:** there are no recordings to license or bundle.
 
+## The Bookstore
+
+- **Published books are not encrypted:** browsing, review and reading all need the text, so they live in a private storage bucket, separate from sync. Parcel encryption was built for one recipient and is not used.
+- **One rule for who may read a file:** `storybound_can_read_book` covers the author, reviewers and members. The paywall, when it is turned on, is checked here, so it cannot be patched out of an app.
+- **An account, not sync:** publishing and adding books need no vault. A book's copy is added by `receiveSharedBook`, so it is locked and syncs like any shared book.
+- **Admins are added directly on the database:** there is no route to become one through the apps, so a public repository does not weaken review.
+- **Metadata belongs to a version:** an update's new blurb stays hidden until it is approved, and readers keep the approved version until then.
+- **Locks are built, payments are not:** `paywall_enabled` is off, and payment code waits until it is needed.
+
 ## Security and privacy
 
-- No analytics, advertising, mandatory account, hidden backup, or remote font. Encrypted sync is opt-in and can be omitted entirely from an unconfigured build.
+- No analytics, advertising, hidden backup, or remote font, and no account needed for the core app. Encrypted sync is opt-in and can be omitted entirely from an unconfigured build.
 - Navigation outside the app is denied by default; application-owned external links require an explicit safe path.
 - User-facing failures avoid cryptographic and storage internals; technical diagnostics stay local.
 - The live SQLite database and ordinary portable archives remain plaintext. Operating-system disk encryption or the encrypted vault export is required for at-rest confidentiality outside the app.

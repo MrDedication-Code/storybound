@@ -578,6 +578,26 @@ export function makeApi(): StoryboundApi {
       copy: vi.fn(async () => ok({ message: 'Copied.' })),
       connectClaudeDesktop: vi.fn(async () => ok({ message: 'Connected.' }))
     },
+    bookstore: {
+      status: vi.fn(async () => ok({ phase: 'unavailable' as const })),
+      join: vi.fn(),
+      setPenName: vi.fn(),
+      browse: vi.fn(async () => ok({ items: [], hasMore: false })),
+      listing: vi.fn(),
+      openBook: vi.fn(),
+      collectBook: vi.fn(),
+      publish: vi.fn(),
+      myListings: vi.fn(async () => ok([])),
+      withdraw: vi.fn(),
+      report: vi.fn(async () => ok(undefined)),
+      checkBooks: vi.fn(async () => ok({ updated: [], removed: [] })),
+      reviewQueue: vi.fn(async () => ok([])),
+      readForReview: vi.fn(),
+      decide: vi.fn(),
+      remove: vi.fn(async () => ok(undefined)),
+      reports: vi.fn(async () => ok([])),
+      closeReport: vi.fn()
+    },
     sharing: {
       status: vi.fn(async () =>
         ok({ available: true, address: 'K7QM-2XPD-9RTA-HF4W', senderName: 'Jack' })

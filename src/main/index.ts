@@ -25,6 +25,7 @@ import { registerStoryboundIpc } from './ipc'
 import { AppLogger } from './logger'
 import { registerMediaProtocol } from './media-protocol'
 import { StoryboundStore } from './store'
+import { StoryboundBookstoreController } from './cloud/bookstoreController'
 import { StoryboundSharingController } from './cloud/sharingController'
 import { StoryboundSyncController } from './cloud/syncController'
 import { AgentBridgeController } from './agentBridge'
@@ -407,6 +408,7 @@ async function start(): Promise<void> {
     store,
     sync: syncController,
     sharing: new StoryboundSharingController(store, syncController),
+    bookstore: new StoryboundBookstoreController(store, syncController),
     agentBridge,
     narration: new NarrationController(store.paths.root, new ElectronCredentialProtector()),
     logger,

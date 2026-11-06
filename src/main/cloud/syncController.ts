@@ -24,6 +24,7 @@ import type {
   SyncLinkRequestSummary,
   SyncRuntimeStatus
 } from '@storybound/contracts'
+import type { PasswordResetInput } from '../../shared/bookstore'
 import type { SyncCredentialsInput } from '../../shared/types'
 import type { StoryboundStore } from '../store'
 import { StoryboundError } from '../errors'
@@ -33,6 +34,7 @@ import { ElectronCredentialProtector } from './electronProtector'
 import { SecureCredentialStorage } from './secureCredentials'
 import { encodeCoverForSync } from './coverEncoder'
 import { createStoryboundSupabaseClient } from './supabaseClient'
+import type { BookstoreAccess } from './bookstoreController'
 import type { SharingAccess } from './sharingController'
 import { SupabaseSyncProvider } from './supabaseProvider'
 
@@ -186,7 +188,7 @@ export class StoryboundSyncController {
     if (!data.session) {
       throw new StoryboundError(
         'CONFLICT',
-        'Check your email to confirm the account, then sign in to enable sync.'
+        'Check your email to confirm the account, then sign in.'
       )
     }
     await this.restoreEngine()
@@ -508,6 +510,75 @@ export class StoryboundSyncController {
       throw new StoryboundError('SECURITY_ERROR', 'Unlock sync with the recovery code first.')
     }
     return this.engine.resolveConflict(conflictId, resolution)
+  }
+
+  isConfigured(): boolean {
+    return this.client !== null
+  }
+
+  /** An account is all the Bookstore needs: sync does not have to be set up. */
+  async accountAccess(): Promise<BookstoreAccess | null> {
+    if (!this.client) return null
+    const { data } = await this.client.auth.getSession()
+    if (!data.session) return null
+    return {
+      client: this.client,
+      userId: data.session.user.id,
+      email: data.session.user.email ?? null
+    }
+  }
+
+  /** Emails a code for setting a new password. It says nothing about whether the account exists. */
+  async requestPasswordReset(email: string): Promise<void> {
+    const { error } = await this.requireClient().auth.resetPasswordForEmail(email)
+    if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
+  }
+
+  async resetPassword(input: PasswordResetInput): Promise<SyncRuntimeStatus> {
+    const client = this.requireClient()
+    const verified = await client.auth.verifyOtp({
+      email: input.email,
+      token: input.code,
+      type: 'recovery'
+    })
+    if (verified.error) {
+      throw new StoryboundError(
+        'VALIDATION_ERROR',
+        'That code did not work. Check it, or ask for a new one.',
+        verified.error
+      )
+    }
+    const { error } = await client.auth.updateUser({ password: input.password })
+    if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
+    await this.restoreEngine()
+    return this.status()
+  }
+
+  /**
+   * Deletes the account and everything on the server, and signs out. The books on this device
+   * stay, because they are the person's own.
+   */
+  async deleteAccount(): Promise<SyncRuntimeStatus> {
+    const client = this.requireClient()
+    const userId = await this.requireUserId()
+    const withdrawn = await client.rpc('withdraw_all_storybound_listings')
+    if (withdrawn.error) {
+      throw new StoryboundError(
+        'NETWORK_ERROR',
+        'The account could not be deleted.',
+        withdrawn.error
+      )
+    }
+    const bucket = client.storage.from('bookstore-books')
+    const { data: files } = await bucket.list(userId, { limit: 1000 })
+    if (files?.length) await bucket.remove(files.map((file) => `${userId}/${file.name}`))
+    const { error } = await client.rpc('delete_storybound_account')
+    if (error) {
+      throw new StoryboundError('NETWORK_ERROR', 'The account could not be deleted.', error)
+    }
+    await client.auth.signOut({ scope: 'local' })
+    this.engine = null
+    return this.status()
   }
 
   /** What sharing needs: null until sync is on and unlocked on this device. */

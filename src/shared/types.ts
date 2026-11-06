@@ -10,6 +10,24 @@ import type {
   UpdateShareInput
 } from './sharing'
 import type {
+  BookstoreCheckResult,
+  BookstoreStatus,
+  BrowseStoreInput,
+  CloseReportInput,
+  MyListing,
+  PasswordResetInput,
+  PublishBookInput,
+  ReadForReviewInput,
+  RemoveListingInput,
+  ReportListingInput,
+  ReviewBook,
+  ReviewDecisionInput,
+  ReviewItem,
+  StoreListing,
+  StorePage,
+  StoreReport
+} from './bookstore'
+import type {
   SyncConflictRecord,
   SyncCredentialsInput,
   SyncDeviceSummary,
@@ -971,6 +989,26 @@ export interface StoryboundApi {
     copy(kind: AgentBridgeCopyKind): Promise<ApiResult<OperationResult>>
     connectClaudeDesktop(): Promise<ApiResult<OperationResult>>
   }
+  bookstore: {
+    status(): Promise<ApiResult<BookstoreStatus>>
+    join(termsVersion: number): Promise<ApiResult<BookstoreStatus>>
+    setPenName(penName: string): Promise<ApiResult<BookstoreStatus>>
+    browse(input: BrowseStoreInput): Promise<ApiResult<StorePage>>
+    listing(listingId: string): Promise<ApiResult<StoreListing>>
+    openBook(listingId: string): Promise<ApiResult<ParcelPreview>>
+    collectBook(listingId: string): Promise<ApiResult<ParcelResult>>
+    publish(input: PublishBookInput): Promise<ApiResult<MyListing[]>>
+    myListings(): Promise<ApiResult<MyListing[]>>
+    withdraw(listingId: string): Promise<ApiResult<MyListing[]>>
+    report(input: ReportListingInput): Promise<ApiResult<void>>
+    checkBooks(): Promise<ApiResult<BookstoreCheckResult>>
+    reviewQueue(): Promise<ApiResult<ReviewItem[]>>
+    readForReview(input: ReadForReviewInput): Promise<ApiResult<ReviewBook>>
+    decide(input: ReviewDecisionInput): Promise<ApiResult<ReviewItem[]>>
+    remove(input: RemoveListingInput): Promise<ApiResult<void>>
+    reports(): Promise<ApiResult<StoreReport[]>>
+    closeReport(input: CloseReportInput): Promise<ApiResult<StoreReport[]>>
+  }
   sharing: {
     status(): Promise<ApiResult<SharingStatus>>
     contacts(): Promise<ApiResult<ShareContact[]>>
@@ -989,6 +1027,9 @@ export interface StoryboundApi {
     signUp(input: SyncCredentialsInput): Promise<ApiResult<SyncRuntimeStatus>>
     signIn(input: SyncCredentialsInput): Promise<ApiResult<SyncRuntimeStatus>>
     signOut(): Promise<ApiResult<SyncRuntimeStatus>>
+    requestPasswordReset(input: { email: string }): Promise<ApiResult<void>>
+    resetPassword(input: PasswordResetInput): Promise<ApiResult<SyncRuntimeStatus>>
+    deleteAccount(): Promise<ApiResult<SyncRuntimeStatus>>
     createVault(deviceName?: string): Promise<ApiResult<SyncEnableResult>>
     rotateRecoveryCode(): Promise<ApiResult<SyncEnableResult>>
     recover(input: SyncRecoveryInput): Promise<ApiResult<SyncRuntimeStatus>>

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import {
   existsSync,
@@ -523,6 +524,39 @@ describe('story bible tools', () => {
       current: { content: 'Edited by the user in the app.' }
     })
     expect(store.getStoryEntity(mara).bodyMarkdown).toBe('Edited by the user in the app.')
+  })
+
+  it('will not read out a locked book, which is someone else’s work', async () => {
+    const { store } = await bookWithBible()
+    const book = store.createBook({
+      title: 'Lent to Me',
+      initialChapterTitle: 'One',
+      initialChapterContent: 'Their words.'
+    })
+    const shared = store.prepareSharedBook({
+      bookId: book.id,
+      shareId: null,
+      includeBible: false,
+      encodeCover: () => {
+        throw new Error('No cover')
+      }
+    })
+    const received = store.receiveSharedBook(
+      {
+        shareId: randomUUID(),
+        sequence: 1,
+        mode: 'read-only',
+        senderName: 'Someone',
+        senderAddress: 'bookstore:listing'
+      },
+      shared.body
+    )
+    const chapterId = store.getBook(received.bookId).chapters[0].id
+
+    expect(() => callTool(store, 'get_chapter', { chapterId })).toThrow(/read-only/)
+    expect(callTool(store, 'get_chapter', { chapterId: book.chapters[0].id })).toMatchObject({
+      content: 'Their words.'
+    })
   })
 
   it('rejects a section from another book', async () => {

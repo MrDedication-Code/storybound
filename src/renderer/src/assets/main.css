@@ -4818,3 +4818,203 @@ kbd {
     animation: none;
   }
 }
+
+/* The Bookstore */
+.settings-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--text-muted);
+}
+.account-form,
+.store-join {
+  display: grid;
+  width: min(440px, 100%);
+  gap: 13px;
+  margin: 24px auto;
+}
+.account-form h2,
+.store-join h2 {
+  margin: 0;
+}
+.account-form p,
+.store-join p {
+  margin: 0;
+}
+.account-form__links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.account-form__links button {
+  padding: 0;
+  border: 0;
+  color: var(--accent-bright);
+  background: none;
+  cursor: pointer;
+}
+.store-join ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.store-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+}
+.store-check small {
+  display: block;
+  opacity: 0.72;
+}
+.store-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 26px;
+}
+.store-tools form {
+  display: flex;
+  min-width: 220px;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+.store-tools input,
+.store-tools select {
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  color: var(--text);
+  background: var(--bg);
+}
+.store-tools form input {
+  width: 100%;
+}
+.store-tools input:focus,
+.store-tools select:focus {
+  border-color: var(--accent);
+}
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 30px 24px;
+}
+.store-book {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.store-book strong {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.store-book small {
+  opacity: 0.72;
+}
+.store-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+.store-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  opacity: 0.75;
+  cursor: pointer;
+}
+.store-detail {
+  display: grid;
+  grid-template-columns: minmax(170px, 260px) minmax(0, 1fr);
+  gap: clamp(22px, 4vw, 44px);
+}
+.store-detail h1 {
+  margin: 4px 0;
+}
+.store-detail__subtitle,
+.store-detail__author,
+.store-detail__facts,
+.store-detail__warnings {
+  margin: 4px 0;
+}
+.store-detail__facts,
+.store-detail__warnings {
+  opacity: 0.75;
+}
+.store-detail__blurb {
+  margin: 18px 0;
+  white-space: pre-line;
+}
+.store-detail__actions,
+.store-publish__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.store-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.store-options legend {
+  margin-bottom: 7px;
+  padding: 0;
+}
+.store-options--stacked {
+  flex-direction: column;
+}
+.store-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.store-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.store-list li > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.store-list small {
+  opacity: 0.72;
+}
+.store-review__text {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+@media (max-width: 640px) {
+  .store-detail {
+    grid-template-columns: 1fr;
+  }
+}

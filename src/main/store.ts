@@ -25,6 +25,7 @@ import {
   libraryBackupManifestSchema
 } from '../shared/portable'
 import { canonicalJson, sharedContentHash } from '@storybound/sync'
+import { BOOKSTORE_ADDRESS_PREFIX } from '../shared/bookstore'
 import type {
   BookShare,
   ParcelResult,
@@ -4957,6 +4958,60 @@ export class StoryboundStore {
       .prepare('SELECT chapter_id, content_hash FROM book_share_chapters WHERE share_id = ?')
       .all(shareId) as Array<{ chapter_id: string; content_hash: string }>
     return new Map(rows.map((row) => [row.chapter_id, row.content_hash]))
+  }
+
+  /** A book for the Bookstore. Only someone's own book can be published, without its bible. */
+  prepareBookstoreBook(
+    bookId: string,
+    encodeCover: (path: string) => { mimeType: string; data: Buffer }
+  ): PreparedSharedBook {
+    const id = idSchema.parse(bookId)
+    if (this.requireBook(id).share_id) {
+      throw new StoryboundError(
+        'VALIDATION_ERROR',
+        'Only books you wrote can be published. This one came from someone else.'
+      )
+    }
+    return this.prepareSharedBook({ bookId: id, shareId: null, includeBible: false, encodeCover })
+  }
+
+  /** The reader's copies of Bookstore books, so they can be kept up to date. */
+  listBookstoreBooks(): Array<{
+    bookId: string
+    listingId: string
+    title: string
+    authorName: string
+    version: number
+    deleted: boolean
+  }> {
+    const rows = this.database
+      .prepare(
+        `SELECT id, share_id, title, share_sender_name, share_sequence, deleted_at FROM books
+         WHERE share_sender_address LIKE ? AND share_id IS NOT NULL`
+      )
+      .all(`${BOOKSTORE_ADDRESS_PREFIX}%`) as Array<{
+      id: string
+      share_id: string
+      title: string
+      share_sender_name: string | null
+      share_sequence: number
+      deleted_at: string | null
+    }>
+    return rows.map((row) => ({
+      bookId: row.id,
+      listingId: row.share_id,
+      title: row.title,
+      authorName: row.share_sender_name ?? '',
+      version: row.share_sequence,
+      deleted: row.deleted_at !== null
+    }))
+  }
+
+  findBookstoreBook(listingId: string): string | null {
+    const row = this.database
+      .prepare('SELECT id FROM books WHERE share_sender_address = ? AND deleted_at IS NULL')
+      .get(`${BOOKSTORE_ADDRESS_PREFIX}${listingId}`) as { id: string } | undefined
+    return row?.id ?? null
   }
 
   /** The whole book as it stands, ready to seal. Nothing personal is included. */

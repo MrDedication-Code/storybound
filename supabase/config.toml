@@ -234,6 +234,10 @@ otp_length = 6
 otp_expiry = 3600
 
 # Use a production-ready SMTP server
+[auth.email.template.recovery]
+subject = "Your Storybound password reset code"
+content_path = "./supabase/templates/recovery.html"
+
 # [auth.email.smtp]
 # enabled = true
 # host = "smtp.sendgrid.net"

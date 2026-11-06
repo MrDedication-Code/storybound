@@ -25,6 +25,7 @@ import {
   Users,
   X
 } from 'lucide-react'
+import { BookPublishing } from '../components/bookstore/BookPublishing'
 import { BookSharing } from '../components/parcel/BookSharing'
 import { ShareBookModal } from '../components/parcel/ShareBookModal'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -846,6 +847,7 @@ export function BookPage({ bookId, notify }: BookPageProps): React.JSX.Element {
       </section>
 
       <BookSharing bookId={book.id} notify={notify} refreshKey={shareRefresh} />
+      {!book.share ? <BookPublishing book={book} notify={notify} /> : null}
 
       <section className="content-section" aria-labelledby="chapters-heading">
         <div className="section-heading">

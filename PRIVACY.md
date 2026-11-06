@@ -1,6 +1,6 @@
 # Storybound Privacy
 
-Storybound is a private, local-first personal library. It does not require an account and includes no analytics, advertising, behavioural tracking, or hidden story upload. All core features work offline. Optional encrypted sync requires an account only when the user chooses to enable it.
+Storybound is a private, local-first personal library. Its core features do not require an account, and it includes no analytics, advertising, behavioural tracking, or hidden story upload. All core features work offline. Optional encrypted sync requires an account only when the user chooses to enable it.
 
 ## Data stored on this computer
 
@@ -53,6 +53,18 @@ Each account has a Storybound address, which is a fingerprint of public keys der
 A parcel is encrypted on the sender's device for the recipient and signed by the sender. It holds the book's title, details, cover and chapters, and its story bible if the sender includes it. It never holds highlights, notes, bookmarks, reading position, revision history, ratings or personal notes. The server stores only the sealed parcel, the recipient's address, the sender's account identifier, and dates. It cannot read the sender's name, the title or the text. A parcel is deleted when it is accepted or declined, or after 30 days.
 
 A read-only book cannot be changed or exported through Storybound or Claude, but the text is on the recipient's device, so this is a lock rather than a guarantee that the words can never be copied. Sending a book gives someone a copy that cannot be recalled. **Stop sending updates** ends future updates only.
+
+## The Bookstore
+
+The Bookstore is optional and needs an account. Nothing in a library is published unless the user chooses **Publish to the Bookstore** on a book they wrote.
+
+**A published book is not encrypted.** Its text, cover, pen name, blurb, genre, content warnings and AI statement are stored on Storybound's Supabase project, where review, browsing and reading all need them. Anyone with an account can read it once it is approved. Its story bible is never sent. This is separate from sync: synced books stay end-to-end encrypted, and the words "nobody else can read your books" apply to sync only.
+
+The server records which account accepted the Bookstore terms and confirmed being 18 or over, which accounts added which books, and any reports. Reports are not shown to authors. Readers' copies are kept on their own devices, so a withdrawn book stays with people who already have it. A book removed for breaking the rules is moved to Trash the next time the app checks.
+
+Deleting an account in **Settings** removes the account, its encrypted sync data, and its published books and files from the server. Books on the user's own devices are not touched.
+
+Having a Bookstore book read aloud by the Google voice sends its text to Google, under the reader's own key. Authors agree to this when publishing.
 
 ## Optional Google voice for listening
 

@@ -82,7 +82,7 @@ export function ParcelArrivals(): React.JSX.Element | null {
         </button>
       ) : null}
       {open?.kind === 'book' ? (
-        <ParcelModal
+        <NewBookParcel
           parcel={open}
           onClose={() => setOpen(null)}
           onCollected={(result) => {
@@ -96,6 +96,40 @@ export function ParcelArrivals(): React.JSX.Element | null {
         <UpdateParcel parcel={open} onClose={() => setOpen(null)} onDone={() => finish(open)} />
       ) : null}
     </>
+  )
+}
+
+function NewBookParcel({
+  parcel,
+  onClose,
+  onCollected,
+  onDeclined
+}: {
+  parcel: ParcelSummary
+  onClose: () => void
+  onCollected: (result: ParcelResult) => void
+  onDeclined: () => void
+}): React.JSX.Element {
+  const open = useCallback(
+    async () => unwrap(await storyboundApi().sharing.openParcel(parcel.id)),
+    [parcel.id]
+  )
+  return (
+    <ParcelModal
+      collect={async () => unwrap(await storyboundApi().sharing.acceptParcel(parcel.id))}
+      collectLabel="Collect"
+      decline={async () => {
+        unwrap(await storyboundApi().sharing.declineParcel(parcel.id))
+        onDeclined()
+      }}
+      eyebrow="Parcel"
+      label={`A book from ${parcel.senderName}`}
+      open={open}
+      parcel={parcel}
+      wrappedHeading={`${parcel.senderName} sent you a book`}
+      onClose={onClose}
+      onCollected={onCollected}
+    />
   )
 }
 

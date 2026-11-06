@@ -1,7 +1,7 @@
 import { Check, Gift, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ParcelPreview, ParcelResult, ParcelSummary } from '@shared/sharing'
-import { readableError, storyboundApi, unwrap } from '../../lib/api'
+import type { ParcelPreview, ParcelResult } from '@shared/sharing'
+import { readableError } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
 import { BookCover } from '../BookCover'
 import { Button, InlineNotice } from '../ui'
@@ -12,10 +12,24 @@ import { useParcelScene } from './useParcelScene'
 type Phase = 'wrapped' | 'unwrapping' | 'open' | 'collecting'
 
 interface ParcelModalProps {
-  parcel: ParcelSummary
+  /** What the parcel says before it is opened. */
+  parcel: {
+    title: string
+    authorName: string
+    chapterCount: number
+    mode: 'read-only' | 'editable'
+  }
+  eyebrow: string
+  /** The heading while the parcel is still wrapped. */
+  wrappedHeading: string
+  label: string
+  collectLabel: string
+  open: () => Promise<ParcelPreview>
+  collect: () => Promise<ParcelResult>
+  /** Left out when there is no one to send a book back to. */
+  decline?: () => Promise<void>
   onClose: () => void
   onCollected: (result: ParcelResult) => void
-  onDeclined: () => void
 }
 
 function detailsOf(preview: ParcelPreview): BookDetails {
@@ -36,9 +50,15 @@ function detailsOf(preview: ParcelPreview): BookDetails {
 /** A new book arriving: the parcel, the unwrapping, and the book itself. */
 export function ParcelModal({
   parcel,
+  eyebrow,
+  wrappedHeading,
+  label,
+  collectLabel,
+  open,
+  collect,
+  decline,
   onClose,
-  onCollected,
-  onDeclined
+  onCollected
 }: ParcelModalProps): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [preview, setPreview] = useState<ParcelPreview | null>(null)
@@ -53,7 +73,7 @@ export function ParcelModal({
     let cancelled = false
     void (async () => {
       try {
-        const opened = unwrap(await storyboundApi().sharing.openParcel(parcel.id))
+        const opened = await open()
         if (!cancelled) setPreview(opened)
       } catch (caught) {
         if (!cancelled) setError(readableError(caught))
@@ -62,7 +82,7 @@ export function ParcelModal({
     return () => {
       cancelled = true
     }
-  }, [parcel.id])
+  }, [open])
 
   useEffect(() => {
     if (ready) void scene.current?.arrive()
@@ -92,11 +112,11 @@ export function ParcelModal({
     setPhase('open')
   }
 
-  const collect = async (): Promise<void> => {
+  const collectBook = async (): Promise<void> => {
     setPhase('collecting')
     setError('')
     try {
-      const result = unwrap(await storyboundApi().sharing.acceptParcel(parcel.id))
+      const result = await collect()
       playCollect()
       await scene.current?.collect()
       onCollected(result)
@@ -106,10 +126,9 @@ export function ParcelModal({
     }
   }
 
-  const decline = async (): Promise<void> => {
+  const declineBook = async (): Promise<void> => {
     try {
-      unwrap(await storyboundApi().sharing.declineParcel(parcel.id))
-      onDeclined()
+      await decline?.()
     } catch (caught) {
       setError(readableError(caught))
     }
@@ -117,14 +136,10 @@ export function ParcelModal({
 
   const wrapped = phase === 'wrapped'
   return (
-    <div aria-label={`A book from ${parcel.senderName}`} className="parcel-stage" role="dialog">
+    <div aria-label={label} className="parcel-stage" role="dialog">
       <header className="parcel-stage__header">
-        <p className="eyebrow">Parcel</p>
-        <h2>
-          {wrapped || phase === 'unwrapping'
-            ? `${parcel.senderName} sent you a book`
-            : parcel.title}
-        </h2>
+        <p className="eyebrow">{eyebrow}</p>
+        <h2>{wrapped || phase === 'unwrapping' ? wrappedHeading : parcel.title}</h2>
         {wrapped ? (
           <p>{ready ? 'Click the parcel to unwrap it.' : 'Fetching your parcel…'}</p>
         ) : phase === 'open' || phase === 'collecting' ? (
@@ -181,11 +196,18 @@ export function ParcelModal({
               {preview?.hasBible ? ' Its story bible is included.' : ''}
             </p>
             <div className="parcel-stage__actions">
-              <Button disabled={busy} onClick={() => void decline()}>
-                Decline
-              </Button>
-              <Button disabled={busy} icon={Check} variant="primary" onClick={() => void collect()}>
-                Collect
+              {decline ? (
+                <Button disabled={busy} onClick={() => void declineBook()}>
+                  Decline
+                </Button>
+              ) : null}
+              <Button
+                disabled={busy}
+                icon={Check}
+                variant="primary"
+                onClick={() => void collectBook()}
+              >
+                {collectLabel}
               </Button>
             </div>
           </>

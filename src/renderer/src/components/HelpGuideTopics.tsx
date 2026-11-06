@@ -360,6 +360,81 @@ export function SendingGuide(): React.JSX.Element {
   )
 }
 
+export function BookstoreGuide(): React.JSX.Element {
+  return (
+    <div className="help-topic">
+      <p>
+        The Bookstore is a shared shelf of books from other readers. It needs a free account, but
+        not sync, and you must be 18 or over.
+      </p>
+
+      <h3>Finding a book</h3>
+      <ol>
+        <li>
+          Choose <strong>Bookstore</strong> in the sidebar and create an account or sign in.
+        </li>
+        <li>Browse by genre, or search by title or author.</li>
+        <li>
+          Open a book and choose <strong>Add to library</strong>.
+        </li>
+      </ol>
+      <p>
+        You can read, highlight, take notes and listen, but not change or export it. New versions
+        arrive by themselves, and your place and notes stay as they are.
+      </p>
+
+      <h3>Publishing your book</h3>
+      <ol>
+        <li>
+          Open your book and choose <strong>Publish to the Bookstore</strong>.
+        </li>
+        <li>Choose a pen name, write a blurb, and add a genre and content warnings.</li>
+        <li>Say how AI was used, and confirm you have the right to publish it.</li>
+        <li>
+          Choose <strong>Send for review</strong>. The book’s page shows the result.
+        </li>
+      </ol>
+      <p>
+        To change a published book, edit it as usual and choose <strong>Send an update</strong>.
+        Readers keep the old version until the new one is approved.
+      </p>
+
+      <h3>Good to know</h3>
+      <ul>
+        <li>
+          <strong>A published book is public.</strong> Anyone with an account can read it, and it is
+          stored in a way Storybound can read, unlike the books you sync. Its story bible is never
+          included.
+        </li>
+        <li>
+          <strong>The rules:</strong> only publish what you have the right to publish. No explicit
+          sexual content, and nothing illegal or hateful.
+        </li>
+        <li>
+          <strong>Withdrawing a book:</strong> new readers can’t add it, and people who already have
+          it keep their copy.
+        </li>
+        <li>
+          <strong>Books that break the rules:</strong> they are removed from the Bookstore, and
+          readers’ copies move to Trash.
+        </li>
+        <li>
+          <strong>Reporting a book:</strong> choose <strong>Report</strong> on its page. The author
+          won’t see who sent it.
+        </li>
+        <li>
+          <strong>The lock:</strong> it stops the app and Claude copying a book out, but the words
+          are on your device, so it isn’t perfect protection.
+        </li>
+        <li>
+          <strong>Your account:</strong> you can delete it in <strong>Settings</strong>. Your books
+          stay on this device, and anything you published leaves the Bookstore.
+        </li>
+      </ul>
+    </div>
+  )
+}
+
 export function ListeningGuide(): React.JSX.Element {
   return (
     <div className="help-topic">

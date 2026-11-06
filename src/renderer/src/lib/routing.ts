@@ -12,6 +12,9 @@ export type Route =
       searchTerm?: string
     }
   | { name: 'search'; term: string }
+  | { name: 'bookstore' }
+  | { name: 'bookstore-book'; listingId: string }
+  | { name: 'bookstore-review' }
   | { name: 'trash' }
   | { name: 'settings' }
   | { name: 'not-found' }
@@ -61,6 +64,10 @@ export function parseRoute(hash: string): Route {
   if (segments[0] === 'search') {
     return { name: 'search', term: new URLSearchParams(queryString).get('q') ?? '' }
   }
+  if (segments[0] === 'bookstore') {
+    if (segments[1] === 'review') return { name: 'bookstore-review' }
+    return segments[1] ? { name: 'bookstore-book', listingId: segments[1] } : { name: 'bookstore' }
+  }
   if (segments[0] === 'trash') return { name: 'trash' }
   if (segments[0] === 'settings') return { name: 'settings' }
   return { name: 'not-found' }
@@ -100,6 +107,9 @@ export const routes = {
     return `/read/${encodeURIComponent(bookId)}${chapterId ? `/${encodeURIComponent(chapterId)}` : ''}${queryString ? `?${queryString}` : ''}`
   },
   search: (term: string): string => `/search?q=${encodeURIComponent(term)}`,
+  bookstore: (): string => '/bookstore',
+  bookstoreBook: (listingId: string): string => `/bookstore/${encodeURIComponent(listingId)}`,
+  bookstoreReview: (): string => '/bookstore/review',
   trash: (): string => '/trash',
   settings: (): string => '/settings'
 }

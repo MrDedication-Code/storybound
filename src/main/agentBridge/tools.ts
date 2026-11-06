@@ -362,6 +362,8 @@ export const AGENT_TOOLS: AgentTool[] = [
     annotations: readOnly,
     run: (store, input) => {
       const chapter = store.getChapter(input.chapterId)
+      // A locked book is someone else's work, shared to be read here and not copied out.
+      store.assertBookEditable(chapter.bookId)
       return {
         text: json({
           ...describeChapter(chapter, chapterNumber(store, chapter)),

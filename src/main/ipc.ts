@@ -82,6 +82,19 @@ import type { AppLogger } from './logger'
 import { buildBookEpub3, buildBookMarkdown, buildBookPrintHtml } from './standardExport'
 import { buildOfflineCompanionHtml } from './companionExport'
 import type { StoryboundStore } from './store'
+import {
+  browseStoreSchema,
+  closeReportSchema,
+  passwordResetRequestSchema,
+  passwordResetSchema,
+  penNameSchema,
+  publishBookSchema,
+  readForReviewSchema,
+  removeListingSchema,
+  reportListingSchema,
+  reviewDecisionSchema
+} from '../shared/bookstore'
+import type { StoryboundBookstoreController } from './cloud/bookstoreController'
 import type { StoryboundSharingController } from './cloud/sharingController'
 import type { StoryboundSyncController } from './cloud/syncController'
 import { INBOX_INSTRUCTIONS, type AgentBridgeController } from './agentBridge'
@@ -91,6 +104,7 @@ interface IpcDependencies {
   store: StoryboundStore
   sync: StoryboundSyncController
   sharing: StoryboundSharingController
+  bookstore: StoryboundBookstoreController
   agentBridge: AgentBridgeController
   narration: NarrationController
   logger: AppLogger
@@ -123,6 +137,7 @@ export function registerStoryboundIpc({
   store,
   sync,
   sharing,
+  bookstore,
   agentBridge,
   narration,
   logger,
@@ -397,6 +412,33 @@ export function registerStoryboundIpc({
   handle(IPC_CHANNELS.sharingOpenParcel, idSchema, (parcelId) => sharing.openParcel(parcelId))
   handle(IPC_CHANNELS.sharingAcceptParcel, idSchema, (parcelId) => sharing.acceptParcel(parcelId))
   handle(IPC_CHANNELS.sharingDeclineParcel, idSchema, (parcelId) => sharing.declineParcel(parcelId))
+  handle(IPC_CHANNELS.bookstoreStatus, noInput, () => bookstore.status())
+  handle(IPC_CHANNELS.bookstoreJoin, z.number().int().min(1), (version) => bookstore.join(version))
+  handle(IPC_CHANNELS.bookstoreSetPenName, penNameSchema, (name) => bookstore.setPenName(name))
+  handle(IPC_CHANNELS.bookstoreBrowse, browseStoreSchema, (input) => bookstore.browse(input))
+  handle(IPC_CHANNELS.bookstoreListing, idSchema, (id) => bookstore.listing(id))
+  handle(IPC_CHANNELS.bookstoreOpenBook, idSchema, (id) => bookstore.openBook(id))
+  handle(IPC_CHANNELS.bookstoreCollectBook, idSchema, (id) => bookstore.collectBook(id))
+  handle(IPC_CHANNELS.bookstorePublish, publishBookSchema, (input) => bookstore.publish(input))
+  handle(IPC_CHANNELS.bookstoreMyListings, noInput, () => bookstore.myListings())
+  handle(IPC_CHANNELS.bookstoreWithdraw, idSchema, (id) => bookstore.withdraw(id))
+  handle(IPC_CHANNELS.bookstoreReport, reportListingSchema, (input) => bookstore.report(input))
+  handle(IPC_CHANNELS.bookstoreCheckBooks, noInput, () => bookstore.checkBooks())
+  handle(IPC_CHANNELS.bookstoreReviewQueue, noInput, () => bookstore.reviewQueue())
+  handle(IPC_CHANNELS.bookstoreReadForReview, readForReviewSchema, (input) =>
+    bookstore.readForReview(input)
+  )
+  handle(IPC_CHANNELS.bookstoreDecide, reviewDecisionSchema, (input) => bookstore.decide(input))
+  handle(IPC_CHANNELS.bookstoreRemove, removeListingSchema, (input) => bookstore.remove(input))
+  handle(IPC_CHANNELS.bookstoreReports, noInput, () => bookstore.reports())
+  handle(IPC_CHANNELS.bookstoreCloseReport, closeReportSchema, (input) =>
+    bookstore.closeReport(input)
+  )
+  handle(IPC_CHANNELS.syncRequestPasswordReset, passwordResetRequestSchema, ({ email }) =>
+    sync.requestPasswordReset(email)
+  )
+  handle(IPC_CHANNELS.syncResetPassword, passwordResetSchema, (input) => sync.resetPassword(input))
+  handle(IPC_CHANNELS.syncDeleteAccount, noInput, () => sync.deleteAccount())
   handle(IPC_CHANNELS.syncStatus, noInput, () => sync.status())
   handle(IPC_CHANNELS.syncSignUp, syncCredentialsSchema, (input) => sync.signUp(input))
   handle(IPC_CHANNELS.syncSignIn, syncCredentialsSchema, (input) => sync.signIn(input))
@@ -457,6 +499,7 @@ export function registerStoryboundIpc({
     return store.exportBookToPath(bookId, result.filePath)
   })
   handle(IPC_CHANNELS.dataExportStandard, standardBookExportSchema, async (input) => {
+    store.assertBookEditable(input.bookId)
     const book = store.getBook(input.bookId)
     const chapters = book.chapters.map((chapter) => store.getChapter(chapter.id))
     const configuration = {
@@ -605,6 +648,7 @@ export function registerStoryboundIpc({
     model: OPENAI_ASSISTANT_MODEL
   }))
   handle(IPC_CHANNELS.dataExportCompanion, idSchema, async (bookId) => {
+    store.assertBookEditable(bookId)
     const book = store.getBook(bookId)
     const result = await dialog.showSaveDialog(getWindow()!, {
       title: 'Export offline companion reader',

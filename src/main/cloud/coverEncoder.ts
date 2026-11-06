@@ -7,6 +7,8 @@ import type { EncodedCover } from '../sync/entities'
 const MAX_WIDTH = 900
 const MAX_HEIGHT = 1350
 const JPEG_QUALITY = 82
+const THUMBNAIL_WIDTH = 300
+const THUMBNAIL_QUALITY = 70
 
 /** Shrinks a cover image to a sync-sized JPEG. */
 export function encodeCoverForSync(path: string): EncodedCover {
@@ -25,4 +27,14 @@ export function encodeCoverForSync(path: string): EncodedCover {
         })
       : image
   return { mimeType: 'image/jpeg', data: sized.toJPEG(JPEG_QUALITY) }
+}
+
+/** A small cover for browsing the Bookstore, kept with the listing. */
+export function coverThumbnail(cover: { data: Buffer }): string {
+  const image = nativeImage.createFromBuffer(cover.data)
+  if (image.isEmpty()) return ''
+  const { width } = image.getSize()
+  const sized =
+    width > THUMBNAIL_WIDTH ? image.resize({ width: THUMBNAIL_WIDTH, quality: 'good' }) : image
+  return `data:image/jpeg;base64,${sized.toJPEG(THUMBNAIL_QUALITY).toString('base64')}`
 }

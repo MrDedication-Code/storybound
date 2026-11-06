@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { APP_NAME, type ApplicationSettings, type BookDetail } from '@shared/types'
 import { AddBookModal } from './components/AddBookModal'
 import { HelpModal } from './components/HelpModal'
+import { BookstoreWatcher } from './components/bookstore/BookstoreWatcher'
 import { ParcelArrivals } from './components/parcel/ParcelArrivals'
 import { AppShell, Toast } from './components/AppShell'
 import { Button, ErrorState, LoadingState } from './components/ui'
@@ -28,6 +29,15 @@ const SearchPage = lazy(() =>
 )
 const SettingsPage = lazy(() =>
   import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage }))
+)
+const BookstorePage = lazy(() =>
+  import('./pages/BookstorePage').then((module) => ({ default: module.BookstorePage }))
+)
+const BookstoreBookPage = lazy(() =>
+  import('./pages/BookstoreBookPage').then((module) => ({ default: module.BookstoreBookPage }))
+)
+const BookstoreReviewPage = lazy(() =>
+  import('./pages/BookstoreReviewPage').then((module) => ({ default: module.BookstoreReviewPage }))
 )
 const TrashPage = lazy(() =>
   import('./pages/TrashPage').then((module) => ({ default: module.TrashPage }))
@@ -104,11 +114,13 @@ function App(): React.JSX.Element {
               ? route.term
                 ? `Search: ${route.term}`
                 : 'Search'
-              : route.name === 'trash'
-                ? 'Trash'
-                : route.name === 'settings'
-                  ? 'Settings'
-                  : 'Page not found'
+              : route.name.startsWith('bookstore')
+                ? 'Bookstore'
+                : route.name === 'trash'
+                  ? 'Trash'
+                  : route.name === 'settings'
+                    ? 'Settings'
+                    : 'Page not found'
 
   useEffect(() => {
     document.title = `${pageTitle} — ${APP_NAME}`
@@ -225,7 +237,8 @@ function App(): React.JSX.Element {
   }
 
   let content: React.JSX.Element
-  let active: 'library' | 'book' | 'editor' | 'search' | 'trash' | 'settings' = 'library'
+  let active: 'library' | 'book' | 'editor' | 'search' | 'bookstore' | 'trash' | 'settings' =
+    'library'
 
   switch (route.name) {
     case 'library':
@@ -281,6 +294,18 @@ function App(): React.JSX.Element {
       active = 'search'
       content = <SearchPage term={route.term} />
       break
+    case 'bookstore':
+      active = 'bookstore'
+      content = <BookstorePage />
+      break
+    case 'bookstore-book':
+      active = 'bookstore'
+      content = <BookstoreBookPage listingId={route.listingId} notify={notify} />
+      break
+    case 'bookstore-review':
+      active = 'bookstore'
+      content = <BookstoreReviewPage notify={notify} />
+      break
     case 'trash':
       active = 'trash'
       content = <TrashPage notify={notify} />
@@ -326,6 +351,7 @@ function App(): React.JSX.Element {
         <Suspense fallback={<PageFallback />}>{content}</Suspense>
       </AppShell>
       <ParcelArrivals />
+      <BookstoreWatcher notify={notify} />
       {addBookOpen ? (
         <AddBookModal onClose={() => setAddBookOpen(false)} onCreated={handleCreated} />
       ) : null}
