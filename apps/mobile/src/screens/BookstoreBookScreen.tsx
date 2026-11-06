@@ -124,7 +124,7 @@ export function BookstoreBookScreen({
   }, [bookstore, listingId])
 
   useEffect(() => {
-    void load()
+    void Promise.resolve().then(load)
   }, [load])
 
   const add = async (): Promise<void> => {

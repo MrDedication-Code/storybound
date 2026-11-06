@@ -309,7 +309,7 @@ function Shelves({
   )
 
   useEffect(() => {
-    void load(0)
+    void Promise.resolve().then(() => load(0))
   }, [load])
 
   return (
@@ -436,7 +436,7 @@ export function BookstoreScreen({
   }, [bookstore])
 
   useEffect(() => {
-    void load()
+    void Promise.resolve().then(load)
   }, [load])
 
   return (
