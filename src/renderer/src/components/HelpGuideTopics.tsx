@@ -369,6 +369,27 @@ export function ListeningGuide(): React.JSX.Element {
         On the phone it keeps going with the screen off.
       </p>
 
+      <h3>Choosing where it starts</h3>
+      <p>
+        Open the listening controls and they show the opening words of the paragraph it will start
+        from, and that paragraph is shaded on the page. Scrolling moves it. After listening, it is
+        the paragraph you got to.
+      </p>
+      <ul>
+        <li>
+          <strong>Read from a different paragraph:</strong> on a computer, move the pointer over the
+          paragraph and click the ▶ beside it. On the phone, tap the paragraph. Reading starts
+          straight away, even if it was already playing.
+        </li>
+        <li>
+          <strong>Go back to the beginning:</strong> choose <strong>Start of chapter</strong>.
+        </li>
+        <li>
+          <strong>See the place:</strong> click or tap the opening words in the controls, and the
+          page scrolls to them.
+        </li>
+      </ul>
+
       <h3>The three voices</h3>
       <div className="help-topic__table">
         <table>

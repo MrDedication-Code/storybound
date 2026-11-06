@@ -1,7 +1,7 @@
 import {
-  buildNarrationScript,
   GeminiSpeechError,
-  segmentAtProgress,
+  listeningStartOffset,
+  narrationFrom,
   segmentProgress,
   type NarrationSegment
 } from '@storybound/narration'
@@ -93,6 +93,8 @@ interface ChapterScript {
   title: string
   contentLength: number
   segments: NarrationSegment[]
+  /** The passage to begin with. */
+  startIndex: number
 }
 
 /**
@@ -139,13 +141,15 @@ export class ListeningSession {
     return () => this.listeners.delete(listener)
   }
 
-  /** Starts reading a book from a chapter and a place in it (0 to 1). */
+  /** Starts reading a book from a chapter and a place in it (0 to 1), or an exact paragraph. */
   async start(input: {
     repository: MobileRepository
     voice: ListeningVoice
     bookId: string
     chapterId: string
     progress: number
+    /** Where the paragraph to start from begins in the chapter's text. Overrides `progress`. */
+    startOffset?: number
     speed: number
   }): Promise<void> {
     const generation = this.reset()
@@ -158,12 +162,13 @@ export class ListeningSession {
       0,
       book.chapters.findIndex((chapter) => chapter.id === input.chapterId)
     )
-    const script = await this.loadScript(chapterIndex)
+    const script = await this.loadScript(
+      chapterIndex,
+      (length) => input.startOffset ?? listeningStartOffset(input.progress, length)
+    )
     if (generation !== this.generation || !script) return
     this.script = script
-    const startAt = input.progress >= 0.98 ? 0 : input.progress
-    this.nextSegment =
-      startAt > 0 ? segmentAtProgress(script.segments, startAt, script.contentLength) : 0
+    this.nextSegment = script.startIndex
     this.wantsToPlay = true
     this.waiting = true
     this.backend.setRate(input.speed)
@@ -427,16 +432,12 @@ export class ListeningSession {
       return
     }
     this.voice = replacement
-    const script = await this.loadScript(item.chapterIndex)
+    // The free voice divides a chapter differently, so find the same place in its passages.
+    const script = await this.loadScript(item.chapterIndex, () => item.segment.start)
     if (generation !== this.generation) return
     if (script) {
-      // The free voice divides a chapter differently, so find the same place in its passages.
       this.script = script
-      this.nextSegment = segmentAtProgress(
-        script.segments,
-        segmentProgress(item.segment, item.contentLength),
-        script.contentLength
-      )
+      this.nextSegment = script.startIndex
     }
     this.update({ error: `${error.message} The free voice will read until then.` })
     void this.fill(generation)
@@ -471,19 +472,25 @@ export class ListeningSession {
     return null
   }
 
-  private async loadScript(chapterIndex: number): Promise<ChapterScript | null> {
+  private async loadScript(
+    chapterIndex: number,
+    startAt: (contentLength: number) => number = () => 0
+  ): Promise<ChapterScript | null> {
     const summary = this.book?.chapters[chapterIndex]
     if (!summary || !this.repository) return null
     const chapter = await this.repository.getChapter(summary.id)
+    const start = narrationFrom(
+      { title: chapter.title, content: chapter.content },
+      { longPassages: this.voice?.metered === true },
+      startAt(chapter.content.length)
+    )
     return {
       chapterIndex,
       chapterId: chapter.id,
       title: chapter.title,
       contentLength: chapter.content.length,
-      segments: buildNarrationScript(
-        { title: chapter.title, content: chapter.content },
-        { longPassages: this.voice?.metered === true }
-      )
+      segments: start.segments,
+      startIndex: start.index
     }
   }
 

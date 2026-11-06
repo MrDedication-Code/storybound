@@ -10,6 +10,7 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance
 } from 'react-native'
+import { narrationPlace, paragraphAtPosition } from '@storybound/narration'
 import {
   AnnotationSheet,
   type AnnotationDraft,
@@ -124,6 +125,8 @@ export function ReaderScreen({
   const [error, setError] = useState('')
   const [listenOpen, setListenOpen] = useState(false)
   const [startingListen, setStartingListen] = useState(false)
+  // The paragraph listening starts from, which moves as the page is scrolled.
+  const [startParagraph, setStartParagraph] = useState(0)
   const listening = useListening()
   const listeningHere = listening.bookId === bookId && listening.status !== 'idle'
   const scrollRef = useRef<ScrollViewInstance>(null)
@@ -150,6 +153,7 @@ export function ReaderScreen({
       const index = nextBook.chapters.findIndex((item) => item.id === nextChapter.id)
       const position = restore?.chapterId === nextChapter.id ? restore.scrollPosition : 0
       positionRef.current = position
+      setStartParagraph(paragraphAtPosition(nextChapter.content, position))
       restorePendingRef.current = true
       setProgress(calculateReadingProgress(index, nextBook.chapters.length, position))
       return nextChapter
@@ -222,6 +226,9 @@ export function ReaderScreen({
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
     const available = Math.max(0, contentSize.height - layoutMeasurement.height)
     positionRef.current = available <= 1 ? 1 : Math.min(1, Math.max(0, contentOffset.y / available))
+    if (listenOpen && chapter) {
+      setStartParagraph(paragraphAtPosition(chapter.content, positionRef.current))
+    }
     if (book && chapter) {
       const index = book.chapters.findIndex((item) => item.id === chapter.id)
       setProgress(calculateReadingProgress(index, book.chapters.length, positionRef.current))
@@ -360,7 +367,7 @@ export function ReaderScreen({
     })
   }, [bookId])
 
-  const startListening = async (): Promise<void> => {
+  const startListening = async (startOffset: number): Promise<void> => {
     if (!chapter) return
     setStartingListen(true)
     setError('')
@@ -372,6 +379,7 @@ export function ReaderScreen({
         bookId,
         chapterId: chapter.id,
         progress: positionRef.current,
+        startOffset,
         speed: settings.speed
       })
     } catch (caught) {
@@ -411,8 +419,17 @@ export function ReaderScreen({
   )
 
   const passage = listeningHere && listening.chapterId === chapter.id ? listening.passage : null
+  const place = listenOpen
+    ? narrationPlace(chapter.content, passage?.start ?? startParagraph)
+    : null
+  const marked = passage ?? (listeningHere ? null : place)
   const isReading = (block: StoryBlock): boolean =>
-    Boolean(passage && block.end > passage.start && block.start < passage.end)
+    Boolean(marked && block.end > marked.start && block.start < marked.end)
+  const placeLabel = !listeningHere
+    ? 'Starts from'
+    : listening.status === 'paused'
+      ? 'Paused in'
+      : 'Reading from'
 
   const renderText = (block: StoryBlock): React.ReactNode[] =>
     segmentBlock(block, placed).map((segment) => {
@@ -425,7 +442,9 @@ export function ReaderScreen({
           accessibilityHint="Opens this highlight"
           key={`${annotation.id}-${segment.start}`}
           style={{ backgroundColor: highlightColor(annotation.color).wash }}
-          onPress={() => setSheet({ mode: 'edit', annotation })}
+          onPress={() =>
+            listenOpen ? void startListening(block.start) : setSheet({ mode: 'edit', annotation })
+          }
         >
           {text}
           {segment.endsNote ? (
@@ -583,6 +602,7 @@ export function ReaderScreen({
                   ]}
                   onLayout={(event) => recordBlock(block, event)}
                   onLongPress={() => setSheet({ mode: 'create', block })}
+                  onPress={listenOpen ? () => void startListening(block.start) : undefined}
                 >
                   {renderText(block)}
                 </Text>
@@ -630,6 +650,21 @@ export function ReaderScreen({
             { backgroundColor: palette.background, borderColor: palette.line }
           ]}
         >
+          {place ? (
+            <Pressable
+              accessibilityHint="Shows this place on the page"
+              accessibilityRole="button"
+              onPress={() => {
+                pendingJumpRef.current = place.start
+                tryPendingJump()
+              }}
+            >
+              <Text style={[styles.listenHint, { color: palette.muted }]}>{placeLabel}</Text>
+              <Text numberOfLines={1} style={[styles.listenPlace, { color: palette.foreground }]}>
+                “{place.preview}”
+              </Text>
+            </Pressable>
+          ) : null}
           <View style={styles.listenRow}>
             <ListenButton
               color={palette.foreground}
@@ -652,7 +687,7 @@ export function ReaderScreen({
               label={listeningHere && listening.status === 'playing' ? 'Pause' : 'Play'}
               onPress={() => {
                 if (listeningHere) listeningSession().toggle()
-                else void startListening()
+                else void startListening(place?.start ?? 0)
               }}
             />
             <ListenButton
@@ -704,6 +739,12 @@ export function ReaderScreen({
           {listeningHere && listening.error ? (
             <Text style={styles.listenError}>{listening.error}</Text>
           ) : null}
+          <Text style={[styles.listenHint, { color: palette.muted }]}>
+            Tap any paragraph to read from there ·{' '}
+            <Text style={styles.listenLink} onPress={() => void startListening(0)}>
+              Start of chapter
+            </Text>
+          </Text>
           <Pressable
             accessibilityRole="button"
             hitSlop={8}
@@ -735,13 +776,13 @@ export function ReaderScreen({
           {reading?.chapterId ? `${chapterIndex + 1}/${book.chapters.length}` : 'New'}
         </Text>
         <Pressable
-          accessibilityHint="Reads the book aloud from here"
+          accessibilityHint="Opens the listening controls"
           accessibilityRole="button"
           hitSlop={10}
           style={({ pressed }) => [styles.bookmarkButton, pressed && styles.pressed]}
           onPress={() => {
+            setStartParagraph(paragraphAtPosition(chapter.content, positionRef.current))
             setListenOpen((open) => !open)
-            if (!listeningHere && !listenOpen) void startListening()
           }}
         >
           <Text style={styles.bookmarkLabel}>{listeningHere ? 'Listening' : 'Listen'}</Text>
@@ -919,6 +960,17 @@ const styles = StyleSheet.create({
   listenHint: {
     fontSize: 12,
     textAlign: 'center'
+  },
+  listenPlace: {
+    marginTop: 2,
+    fontFamily: 'serif',
+    fontSize: 14,
+    fontStyle: 'italic',
+    textAlign: 'center'
+  },
+  listenLink: {
+    color: storyboundColors.brass,
+    fontWeight: '700'
   },
   controls: {
     gap: 12,

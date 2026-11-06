@@ -12,7 +12,11 @@ import {
   parseGeminiVoices,
   pcm16ToWav,
   readParagraphDirection,
-  segmentAtProgress,
+  listeningStartOffset,
+  narrationFrom,
+  narrationPlace,
+  paragraphAtPosition,
+  shownParagraphOffsets,
   stripPerformanceNotes,
   synthesizeWithGemini
 } from '@storybound/narration'
@@ -139,9 +143,96 @@ describe('narration script', () => {
     expect(speech.length).toBeGreaterThan(2)
     for (const segment of speech) expect(segment.text.length).toBeLessThanOrEqual(1200)
     expect(speech.slice(1).every((segment) => segment.text.endsWith('cent.'))).toBe(true)
-    const total = long.length + 15
-    expect(segmentAtProgress(script, 0, total)).toBe(0)
-    expect(segmentAtProgress(script, 0.99, total)).toBe(speech.at(-1)?.index)
+    const chapter = { title: '', content: `Opening line.\n\n${long}` }
+    const last = speech.at(-1)!
+    expect(narrationFrom(chapter, {}, 0).index).toBe(0)
+    expect(narrationFrom(chapter, {}, last.start).index).toBe(last.index)
+  })
+})
+
+describe('choosing where listening starts', () => {
+  const paragraph = (name: string): string => `${name} ${'walked along the salt road. '.repeat(14)}`
+  const content = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
+    .map(paragraph)
+    .join('\n\n')
+  const chapter = { title: 'The Road', content }
+  const startOf = (name: string): number => content.indexOf(`${name} walked`)
+
+  it('starts at the chosen paragraph, not the top of the long passage it falls in', () => {
+    const plain = buildNarrationScript(chapter, { longPassages: true })
+    const inside = plain.find((item) => item.index > 0 && item.text.includes('Four walked'))!
+    expect(inside.text.startsWith('Four')).toBe(false)
+
+    const { segments, index } = narrationFrom(chapter, { longPassages: true }, startOf('Four'))
+    expect(segments[index].text.startsWith('Four')).toBe(true)
+    expect(segments[index].start).toBe(startOf('Four'))
+  })
+
+  it('leaves every later passage as it was, so audio already made is used again', () => {
+    const plain = buildNarrationScript(chapter, { longPassages: true })
+    const { segments, index } = narrationFrom(chapter, { longPassages: true }, startOf('Four'))
+    const later = (from: typeof plain, at: number): string[] =>
+      from.filter((item) => item.start > at).map((item) => item.text)
+    const end = segments[index].end
+    expect(later(segments, end)).toEqual(later(plain, end))
+    expect(segments.length).toBeLessThanOrEqual(plain.length + 1)
+  })
+
+  it('keeps every word in the chapter when a passage is divided', () => {
+    const { segments } = narrationFrom(chapter, { longPassages: true }, startOf('Four'))
+    const words = segments.map((item) => item.text).join(' ')
+    for (const name of ['One', 'Three', 'Four', 'Ten']) {
+      expect(words.split(`${name} walked`).length).toBe(2)
+    }
+  })
+
+  it('reads the title with the first paragraph', () => {
+    for (const offset of [0, 3]) {
+      expect(narrationFrom(chapter, {}, offset).index).toBe(0)
+      expect(narrationFrom(chapter, { longPassages: true }, offset).index).toBe(0)
+    }
+  })
+
+  it('goes back to the start of a paragraph chosen partway through it', () => {
+    const { segments, index } = narrationFrom(chapter, {}, startOf('Four') + 20)
+    expect(segments[index].start).toBe(startOf('Four'))
+  })
+
+  it('resumes from a saved place partway through a split paragraph', () => {
+    const long = 'She counted the ledgers again. '.repeat(120).trim()
+    const split = { title: '', content: `Opening line.\n\n${long}` }
+    const second = buildNarrationScript(split).filter((item) => item.kind === 'speech')[2]
+    expect(narrationFrom(split, {}, second.start).index).toBe(second.index)
+  })
+
+  it('moves past scene breaks and pauses to the next words', () => {
+    const text = 'First.\n\n***\n\n[[long pause]]\n\nSecond.'
+    const place = narrationPlace(text, text.indexOf('***'))
+    expect(place?.preview).toBe('Second.')
+    expect(place?.start).toBe(text.indexOf('Second'))
+  })
+
+  it('shows a paragraph’s opening words without notes or Markdown', () => {
+    const text = '[[hushed]] *Quiet* now. [[sigh]] Listen.'
+    expect(narrationPlace(text, 0)?.preview).toBe('Quiet now. Listen.')
+    expect(narrationPlace(`${'word '.repeat(40)}`, 0)?.preview.endsWith('…')).toBe(true)
+    expect(narrationPlace('', 0)).toBeNull()
+  })
+
+  it('starts the chapter again from the very end', () => {
+    expect(listeningStartOffset(0.99, 1000)).toBe(0)
+    expect(listeningStartOffset(0.5, 1000)).toBe(500)
+    expect(paragraphAtPosition(content, 1)).toBe(0)
+    expect(paragraphAtPosition(content, startOf('Six') / content.length)).toBe(startOf('Six'))
+  })
+
+  it('matches paragraphs on the page to the stored text, around performance notes', () => {
+    const text = '[[warm]] First.\n\n[[long pause]]\n\nSecond [[sigh]] line.\n\nThird.'
+    expect(shownParagraphOffsets(text).map((item) => item.stored)).toEqual([
+      0,
+      text.indexOf('Second'),
+      text.indexOf('Third')
+    ])
   })
 })
 

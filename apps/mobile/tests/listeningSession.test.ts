@@ -117,8 +117,16 @@ function setup(options: { failures?: unknown[]; voice?: Partial<ListeningVoice> 
   }
 
   const session = new ListeningSession(backend)
-  const start = (progress = 0): Promise<void> =>
-    session.start({ repository, voice, bookId: 'b1', chapterId: 'c1', progress, speed: 1.25 })
+  const start = (progress = 0, startOffset?: number): Promise<void> =>
+    session.start({
+      repository,
+      voice,
+      bookId: 'b1',
+      chapterId: 'c1',
+      progress,
+      startOffset,
+      speed: 1.25
+    })
   return { session, start, queue, saved, spoken, player, controls, finishTrack }
 }
 
@@ -140,6 +148,32 @@ describe('listening session', () => {
     // Passages are queued ahead, carrying on into the next chapter.
     expect(queue).toContain('speech:A door closed.')
     expect(queue).toContain('speech:Morning')
+  })
+
+  it('starts from a chosen paragraph, whatever the reading position says', async () => {
+    const { session, start, queue } = setup()
+    await start(0.9, chapters[0].content.indexOf('[[hushed]]'))
+    await settle()
+    expect(queue[0]).toBe('speech:Someone whispered.')
+    expect(session.current.passage?.start).toBe(chapters[0].content.indexOf('[[hushed]]'))
+  })
+
+  it('starts at a chosen paragraph inside a long passage, and can move while playing', async () => {
+    const content = ['First part.', 'Second part.', 'Third part.'].join('\n\n')
+    const original = chapters[0].content
+    chapters[0].content = content
+    try {
+      const { session, start, queue } = setup({ voice: { metered: true } })
+      await start(0, content.indexOf('Second'))
+      await settle()
+      expect(queue[0]).toBe('speech:Second part.\n\nThird part.')
+      await start(0, content.indexOf('Third'))
+      await settle()
+      expect(queue[0]).toBe('speech:Third part.')
+      expect(session.current.status).toBe('playing')
+    } finally {
+      chapters[0].content = original
+    }
   })
 
   it('moves into the next chapter and stops at the end of the book', async () => {

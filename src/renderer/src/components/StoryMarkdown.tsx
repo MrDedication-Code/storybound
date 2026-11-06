@@ -1,7 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { Play } from 'lucide-react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
-import { PERFORMANCE_NOTE, stripPerformanceNotes } from '@storybound/narration'
+import {
+  PERFORMANCE_NOTE,
+  shownParagraphOffsets,
+  stripPerformanceNotes
+} from '@storybound/narration'
 
 const STORY_REMARK_PLUGINS = [remarkBreaks]
 
@@ -28,6 +33,37 @@ const SAFE_COMPONENTS: Components = {
       {children}
     </span>
   )
+}
+
+/**
+ * Marks each paragraph with its place in the chapter's stored text and gives it a button for
+ * listening from there. The reader shows the buttons only while its listening controls are open;
+ * they are always rendered because rebuilding the paragraphs would lose the highlights on them.
+ */
+function listenableComponents(source: string): Components {
+  const offsets = shownParagraphOffsets(source)
+  return {
+    ...SAFE_COMPONENTS,
+    p: ({ children, node }) => {
+      const shown = node?.position?.start.offset ?? 0
+      const stored = offsets.findLast((item) => item.shown <= shown)?.stored
+      if (stored === undefined) return <p>{children}</p>
+      return (
+        <p data-story-offset={stored}>
+          {children}
+          <button
+            aria-label="Listen from here"
+            className="listen-from"
+            data-listen-from={stored}
+            title="Listen from here"
+            type="button"
+          >
+            <Play aria-hidden="true" size={13} />
+          </button>
+        </p>
+      )
+    }
+  }
 }
 
 interface HighlightRegistry {
@@ -134,15 +170,18 @@ function findQuoteRanges(root: HTMLElement, quote: string): Range[] {
  * Story text as a reader sees it. Performance notes ([[sigh]]) are for the narrating voice and
  * are hidden, unless `showNotes` is set, as in the editor's preview, where they show as chips.
  */
-export function StoryMarkdown({
+export const StoryMarkdown = memo(function StoryMarkdown({
   children: source,
   highlight = '',
   highlights = EMPTY_HIGHLIGHTS,
+  listenable = false,
   showNotes = false
 }: {
   children: string
   highlight?: string
   highlights?: readonly StoryHighlight[]
+  /** Adds a "Listen from here" button to each paragraph, for the reader. */
+  listenable?: boolean
   showNotes?: boolean
 }): React.JSX.Element {
   const children = showNotes
@@ -152,6 +191,10 @@ export function StoryMarkdown({
       )
     : stripPerformanceNotes(source)
   const rootRef = useRef<HTMLDivElement>(null)
+  const components = useMemo(
+    () => (listenable ? listenableComponents(source) : SAFE_COMPONENTS),
+    [listenable, source]
+  )
 
   useEffect(() => {
     const root = rootRef.current
@@ -225,9 +268,9 @@ export function StoryMarkdown({
 
   return (
     <div className="story-markdown" ref={rootRef}>
-      <ReactMarkdown components={SAFE_COMPONENTS} remarkPlugins={STORY_REMARK_PLUGINS}>
+      <ReactMarkdown components={components} remarkPlugins={STORY_REMARK_PLUGINS}>
         {children}
       </ReactMarkdown>
     </div>
   )
-}
+})

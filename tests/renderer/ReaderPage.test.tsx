@@ -265,6 +265,61 @@ describe('ReaderPage', () => {
     unmount()
   })
 
+  it('shows where listening will start and reads from a chosen paragraph', async () => {
+    const api = installApi()
+    const content = '[[warm]] The first paragraph.\n\n[[long pause]]\n\nThe second paragraph.'
+    vi.mocked(api.chapters.get).mockResolvedValue({ ok: true, data: { ...chapter, content } })
+    const speak = vi.fn()
+    class Utterance {
+      rate = 1
+      onend: (() => void) | null = null
+      onerror: (() => void) | null = null
+      constructor(readonly text: string) {}
+    }
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: { speak, pause: vi.fn(), resume: vi.fn(), cancel: vi.fn() }
+    })
+    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
+      configurable: true,
+      value: Utterance
+    })
+    const user = userEvent.setup()
+    const { container, unmount } = render(
+      <ReaderPage
+        bookId={book.id}
+        chapterId={chapter.id}
+        notify={vi.fn()}
+        settings={settings}
+        updateSettings={vi.fn(async () => undefined)}
+      />
+    )
+
+    await screen.findByText('The second paragraph.')
+    await user.click(screen.getByRole('button', { name: 'Listen' }))
+    const controls = screen.getByRole('region', { name: 'Listening controls' })
+    expect(within(controls).getByText('Starts from')).toBeInTheDocument()
+    expect(within(controls).getByText('“The first paragraph.”')).toBeInTheDocument()
+    expect(container.querySelector('p.is-listen-start')).toHaveTextContent('The first paragraph.')
+
+    // Each paragraph knows its place in the stored text, around the performance notes.
+    const buttons = screen.getAllByRole('button', { name: 'Listen from here' })
+    expect(buttons).toHaveLength(2)
+    expect(buttons[1]).toHaveAttribute(
+      'data-listen-from',
+      String(content.indexOf('The second paragraph.'))
+    )
+    await user.click(buttons[1])
+    expect((speak.mock.calls.at(-1)?.[0] as Utterance).text).toBe('The second paragraph.')
+    expect(within(controls).getByText('Reading from')).toBeInTheDocument()
+    expect(within(controls).getByText('“The second paragraph.”')).toBeInTheDocument()
+    expect(container.querySelector('p.is-being-read')).toHaveTextContent('The second paragraph.')
+
+    await user.click(within(controls).getByRole('button', { name: 'Start of chapter' }))
+    expect((speak.mock.calls.at(-1)?.[0] as Utterance).text).toBe(chapter.title)
+    unmount()
+  })
+
   it('renders story links inert and blocks closing when reading progress cannot be saved', async () => {
     const api = installApi()
     vi.mocked(api.chapters.get).mockResolvedValue({

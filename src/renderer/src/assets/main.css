@@ -2627,6 +2627,9 @@ kbd {
   color: var(--reader-ink);
   background: var(--reader-paper);
 }
+.reader:has(> .reader-speech) {
+  grid-template-rows: 61px auto minmax(0, 1fr) 34px;
+}
 .reader--light {
   --reader-paper: #fbfaf7;
   --reader-ink: #282724;
@@ -2734,9 +2737,16 @@ kbd {
   box-shadow: 0 12px 35px rgba(0, 0, 0, 0.14);
   transform: translateX(-50%);
 }
+/* Docked above the page, so it never covers the paragraph listening starts from. */
 .reader-speech {
-  width: min(820px, calc(100vw - 32px));
+  position: static;
+  width: 100%;
   flex-wrap: wrap;
+  padding: 7px max(16px, calc((100% - 820px) / 2));
+  border-width: 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
 }
 .reader-speech .reader-speech-voice {
   min-width: 0;
@@ -2763,6 +2773,37 @@ kbd {
   color: var(--reader-muted);
   font-size: 10px;
   text-transform: capitalize;
+}
+.reader-speech-place {
+  display: flex;
+  min-width: 0;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  color: var(--reader-muted);
+  font-size: 11px;
+}
+.reader-speech-place > button:not([class]) {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  padding: 2px 0;
+  border: 0;
+  color: var(--reader-ink);
+  background: none;
+  font-family: var(--serif);
+  font-size: 13px;
+  font-style: italic;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.reader-speech-place > p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 10px;
 }
 .reader-selection-tools {
   top: auto;
@@ -2824,7 +2865,44 @@ kbd {
   text-align: left;
 }
 .reader-prose p {
+  position: relative;
   margin: 0 0 var(--reader-paragraph-space);
+}
+.reader-prose p.is-being-read,
+.reader-prose p.is-listen-start {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.reader-prose .listen-from {
+  position: absolute;
+  top: 0.15em;
+  left: -34px;
+  display: none;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--reader-paper);
+  text-indent: 0;
+  cursor: pointer;
+}
+.reader-prose--listening .listen-from {
+  display: flex;
+  opacity: 0;
+}
+.reader-prose--listening p:hover > .listen-from,
+.reader-prose--listening .listen-from:focus-visible,
+.reader-prose--listening p.is-listen-start > .listen-from {
+  opacity: 1;
+}
+.reader-prose--listening p.is-listen-start > .listen-from {
+  color: var(--reader-paper);
+  background: var(--accent);
 }
 .reader-prose br {
   display: block;
@@ -4227,6 +4305,9 @@ kbd {
   .reader-page {
     width: calc(100% - 34px);
     padding-top: 55px;
+  }
+  .reader-prose .listen-from {
+    left: -16px;
   }
   .reader-progress {
     grid-template-columns: 35px minmax(70px, 1fr) 55px;

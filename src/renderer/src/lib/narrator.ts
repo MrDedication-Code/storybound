@@ -1,9 +1,4 @@
-import {
-  buildNarrationScript,
-  segmentAtProgress,
-  segmentProgress,
-  type NarrationSegment
-} from '@storybound/narration'
+import { narrationFrom, segmentProgress, type NarrationSegment } from '@storybound/narration'
 
 export type NarratorState = 'idle' | 'loading' | 'playing' | 'paused'
 
@@ -75,11 +70,7 @@ export class Narrator {
     this.forgetPrepared()
     if (this.chapter) {
       // Voices can divide a chapter differently, so find the same place in the new passages.
-      this.segments = this.script(this.chapter)
-      if (place) {
-        const progress = segmentProgress(place, this.contentLength)
-        this.index = segmentAtProgress(this.segments, progress, this.contentLength)
-      }
+      this.startAt(this.chapter, place?.start ?? 0)
     }
     if (wasPlaying) void this.playCurrent()
   }
@@ -89,14 +80,13 @@ export class Narrator {
     this.fail(message)
   }
 
-  /** Loads a chapter and starts from the passage at a reading position (0 to 1). */
-  load(chapter: { title: string; content: string }, progress = 0): void {
+  /** Loads a chapter, ready to start from the paragraph at a place in its text. */
+  load(chapter: { title: string; content: string }, offset = 0): void {
     this.halt()
     this.forgetPrepared()
     this.chapter = chapter
-    this.segments = this.script(chapter)
     this.contentLength = chapter.content.length
-    this.index = progress > 0 ? segmentAtProgress(this.segments, progress, this.contentLength) : 0
+    this.startAt(chapter, offset)
     this.setState('idle')
   }
 
@@ -223,9 +213,11 @@ export class Narrator {
     return this.voice.kind === 'audio' && this.voice.metered ? METERED_PREPARE_AHEAD : PREPARE_AHEAD
   }
 
-  private script(chapter: { title: string; content: string }): NarrationSegment[] {
+  private startAt(chapter: { title: string; content: string }, offset: number): void {
     const longPassages = this.voice.kind === 'audio' && this.voice.metered === true
-    return buildNarrationScript(chapter, { longPassages })
+    const start = narrationFrom(chapter, { longPassages }, offset)
+    this.segments = start.segments
+    this.index = start.index
   }
 
   private prepare(index: number): Promise<string> {

@@ -42,6 +42,12 @@ import type {
   TextAlignment
 } from '@shared/types'
 import { calculateReadingProgress } from '@shared/text'
+import {
+  listeningStartOffset,
+  narrationPlace,
+  paragraphAtPosition,
+  type NarrationSegment
+} from '@storybound/narration'
 import { readableError, storyboundApi, unwrap } from '../lib/api'
 import type { PrepareCloseDetail } from '../lib/events'
 import { Narrator, type NarratorState, type NarratorVoice } from '../lib/narrator'
@@ -132,6 +138,9 @@ export function ReaderPage({
   const [speechState, setSpeechState] = useState<NarratorState>('idle')
   const [speechRate, setSpeechRate] = useState(1)
   const [speechOpen, setSpeechOpen] = useState(false)
+  // The passage being read, or paused on, and the paragraph listening would start from otherwise.
+  const [speechRange, setSpeechRange] = useState<{ start: number; end: number } | null>(null)
+  const [readingPlace, setReadingPlace] = useState(0)
   const [narration, setNarration] = useState<NarrationStatus | null>(null)
   const narratorRef = useRef<Narrator | null>(null)
   // Set when a chapter ends while listening, so the next chapter starts playing once it loads.
@@ -208,6 +217,7 @@ export function ReaderPage({
       const restorePosition =
         initialLocation ?? (reading.chapterId === nextChapterId ? reading.scrollPosition : 0)
       positionRef.current = restorePosition
+      setReadingPlace(paragraphAtPosition(nextChapter.content, restorePosition))
       const nextIndex = nextBook.chapters.findIndex((item) => item.id === nextChapterId)
       setProgress(
         initialLocation === undefined || nextIndex < 0
@@ -284,6 +294,7 @@ export function ReaderPage({
     if (!container) return
     const maximum = container.scrollHeight - container.clientHeight
     positionRef.current = maximum <= 1 ? 1 : Math.min(1, Math.max(0, container.scrollTop / maximum))
+    if (chapter) setReadingPlace(paragraphAtPosition(chapter.content, positionRef.current))
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = window.setTimeout(() => void savePosition(), 500)
   }
@@ -577,18 +588,22 @@ export function ReaderPage({
     narrator?.giveUp(`${message} Download the free voice in Settings → Listening to keep going.`)
   })
 
-  const followPassage = useEffectEvent((progress: number): void => {
-    // The page follows the voice, and where it has got to becomes the reading position.
-    positionRef.current = progress
+  const scrollToProgress = (progress: number): void => {
     const container = scrollRef.current
-    if (container) {
-      const maximum = Math.max(0, container.scrollHeight - container.clientHeight)
-      if (typeof container.scrollTo === 'function') {
-        container.scrollTo({ top: maximum * progress, behavior: 'smooth' })
-      } else {
-        container.scrollTop = maximum * progress
-      }
+    if (!container) return
+    const maximum = Math.max(0, container.scrollHeight - container.clientHeight)
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: maximum * progress, behavior: 'smooth' })
+    } else {
+      container.scrollTop = maximum * progress
     }
+  }
+
+  const followPassage = useEffectEvent((segment: NarrationSegment, progress: number): void => {
+    // The page follows the voice, and where it has got to becomes the reading position.
+    if (segment.kind === 'speech') setSpeechRange({ start: segment.start, end: segment.end })
+    positionRef.current = progress
+    scrollToProgress(progress)
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = window.setTimeout(() => void savePosition(), 800)
   })
@@ -609,8 +624,11 @@ export function ReaderPage({
     const narrator = new Narrator(
       { kind: 'system', id: 'system' },
       {
-        onState: setSpeechState,
-        onPassage: (_segment, progress) => followPassage(progress),
+        onState: (state) => {
+          setSpeechState(state)
+          if (state === 'idle') setSpeechRange(null)
+        },
+        onPassage: (segment, progress) => followPassage(segment, progress),
         onChapterEnd: () => finishChapter(),
         onError: setError,
         onVoiceLimit: (message) => void voiceLimitReached(message)
@@ -647,9 +665,54 @@ export function ReaderPage({
     if (!narrator || !chapter) return
     const keepGoing = continueListeningRef.current
     continueListeningRef.current = false
-    narrator.load(chapter, keepGoing || positionRef.current >= 0.98 ? 0 : positionRef.current)
+    narrator.load(
+      chapter,
+      keepGoing ? 0 : listeningStartOffset(positionRef.current, chapter.content.length)
+    )
     if (keepGoing) narrator.play()
   }, [chapter])
+
+  /** Reads from a paragraph straight away, from wherever listening was. */
+  const listenFrom = (offset: number): void => {
+    const narrator = narratorRef.current
+    if (!chapter || !narrator) return
+    if (narratorVoice(narration).kind === 'system' && !window.speechSynthesis) {
+      setError('Text-to-speech is not available on this computer.')
+      return
+    }
+    narrator.load(chapter, offset)
+    narrator.play()
+  }
+
+  const toggleSpeech = (): void => {
+    const narrator = narratorRef.current
+    if (!chapter || !narrator) return
+    if (speechState === 'playing' || speechState === 'loading') narrator.pause()
+    else if (speechState === 'idle') listenFrom(readingPlace)
+    else narrator.play()
+  }
+
+  const startOrResume = useEffectEvent((): void => {
+    if (speechState !== 'playing' && speechState !== 'loading') toggleSpeech()
+  })
+
+  // Marks the paragraphs being read, and the one listening starts from, on the page.
+  const listeningPlace = speechRange?.start ?? readingPlace
+  useEffect(() => {
+    const paragraphs = [
+      ...(scrollRef.current?.querySelectorAll<HTMLElement>('p[data-story-offset]') ?? [])
+    ]
+    const offsets = paragraphs.map((paragraph) => Number(paragraph.dataset.storyOffset))
+    const showStart = speechOpen && speechState !== 'playing' && speechState !== 'loading'
+    const startIndex = offsets.findLastIndex((offset) => offset <= listeningPlace)
+    paragraphs.forEach((paragraph, index) => {
+      const ends = offsets[index + 1] ?? Infinity
+      const beingRead =
+        speechRange !== null && offsets[index] < speechRange.end && ends > speechRange.start
+      paragraph.classList.toggle('is-being-read', beingRead)
+      paragraph.classList.toggle('is-listen-start', showStart && index === Math.max(0, startIndex))
+    })
+  }, [chapter, listeningPlace, speechOpen, speechRange, speechState])
 
   // The Mac's media keys, headphone buttons, and Now Playing control the reading.
   useEffect(() => {
@@ -660,7 +723,7 @@ export function ReaderPage({
       album: 'Storybound'
     })
     const narrator = narratorRef.current
-    navigator.mediaSession.setActionHandler('play', () => narrator?.play())
+    navigator.mediaSession.setActionHandler('play', () => startOrResume())
     navigator.mediaSession.setActionHandler('pause', () => narrator?.pause())
     navigator.mediaSession.setActionHandler('nexttrack', () => narrator?.next())
     navigator.mediaSession.setActionHandler('previoustrack', () => narrator?.previous())
@@ -680,26 +743,6 @@ export function ReaderPage({
           ? 'paused'
           : 'none'
   }, [speechState])
-
-  const toggleSpeech = (): void => {
-    const narrator = narratorRef.current
-    if (!chapter || !narrator) return
-    if (speechState === 'playing' || speechState === 'loading') {
-      narrator.pause()
-      return
-    }
-    if (speechState === 'idle') {
-      if (narratorVoice(narration).kind === 'system' && !window.speechSynthesis) {
-        setError('Text-to-speech is not available on this computer.')
-        return
-      }
-      // Start from wherever the reader has scrolled to; at the very end (or when the whole chapter
-      // fits on screen) start the chapter from the top.
-      const position = positionRef.current >= 0.98 ? 0 : positionRef.current
-      narrator.load(chapter, position)
-    }
-    narrator.play()
-  }
 
   const stopSpeech = (): void => {
     narratorRef.current?.stop()
@@ -764,6 +807,7 @@ export function ReaderPage({
   const next = index < book.chapters.length - 1 ? book.chapters[index + 1] : null
   const chapterBookmarks = bookmarks.filter((item) => item.chapterId === chapter.id)
   const activePanel = panel ? READER_PANEL_TABS.find((item) => item.panel === panel)! : null
+  const place = narrationPlace(chapter.content, listeningPlace)
 
   return (
     <main
@@ -896,6 +940,28 @@ export function ReaderPage({
               Choose a voice
             </Button>
           ) : null}
+          {place ? (
+            <div className="reader-speech-place">
+              <span>
+                {speechState === 'idle'
+                  ? 'Starts from'
+                  : speechState === 'paused'
+                    ? 'Paused in'
+                    : 'Reading from'}
+              </span>
+              <button
+                title="Show this place on the page"
+                type="button"
+                onClick={() => scrollToProgress(place.start / chapter.content.length)}
+              >
+                “{place.preview}”
+              </button>
+              <Button variant="quiet" onClick={() => listenFrom(0)}>
+                Start of chapter
+              </Button>
+              <p>Click ▶ beside any paragraph to read from there.</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -933,7 +999,11 @@ export function ReaderPage({
         onScroll={handleScroll}
       >
         <article
-          className={`reader-page reader-prose ${settings.paragraphIndentation ? 'reader-prose--indented' : ''} ${settings.textAlignment === 'justify' ? 'reader-prose--justified' : ''}`}
+          className={`reader-page reader-prose ${settings.paragraphIndentation ? 'reader-prose--indented' : ''} ${settings.textAlignment === 'justify' ? 'reader-prose--justified' : ''} ${speechOpen ? 'reader-prose--listening' : ''}`}
+          onClick={(event) => {
+            const button = (event.target as HTMLElement).closest<HTMLElement>('[data-listen-from]')
+            if (button) listenFrom(Number(button.dataset.listenFrom))
+          }}
           onMouseUp={(event) => handleStorySelection(event.currentTarget)}
         >
           <header className="reader-chapter-heading">
@@ -941,7 +1011,7 @@ export function ReaderPage({
             <h1>{chapter.title}</h1>
             <span aria-hidden="true">✦</span>
           </header>
-          <StoryMarkdown highlight={searchTerm} highlights={chapterHighlights}>
+          <StoryMarkdown listenable highlight={searchTerm} highlights={chapterHighlights}>
             {chapter.content}
           </StoryMarkdown>
           <footer className="reader-end">

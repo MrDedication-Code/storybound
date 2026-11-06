@@ -62,7 +62,7 @@ Only record what is established. Separate what is on the page from what is plann
 Where it lives:
 
 - If you can save files, keep a folder named after the book holding BIBLE.md, OUTLINE.md and a Chapters folder with a copy of each chapter.
-- Always keep Storybound's Story bible up to date as well, so the plan is in the app: one entry per main character (category character), place (location), rule or organisation (lore) and key event (event), plus entries under Other named STATUS, OUTLINE, LOCKED DECISIONS, OPEN THREADS, THE VOICE and CHAPTER LOG. Add entries with create_bible_section and change them with update_bible_section, passing the updatedAt you read as expectedUpdatedAt so my own edits are never overwritten.
+- Always keep Storybound's Story bible up to date as well, so the plan is in the app: one entry per main character (category character), place (location), rule or organisation (lore) and key event (event), plus entries under Other named STATUS, OUTLINE, LOCKED DECISIONS, OPEN THREADS, THE VOICE and CHAPTER LOG. Add entries with create_bible_section and change them with update_bible_section, passing the updatedAt you read as expectedUpdatedAt so my own edits are never overwritten. Each entry also has a one-line summary on its card: when the content changes what that line should say, as it does for STATUS after every chapter, pass summary in the same update.
 - If you cannot save files, those Story bible entries are the bible, so nothing is lost between chats. Offer me a full BIBLE.md whenever I ask.
 
 ## 4. Write one chapter at a time

@@ -52,8 +52,9 @@ export const MCP_SERVER_INSTRUCTIONS = [
   'orphaned no longer matches the current text but still carries the user’s note and the text it',
   'was attached to. Each book also has a story bible (characters, locations, lore, timeline,',
   'other): read it with get_bible before writing for continuity, keep it current with',
-  'update_bible_section (pass the updatedAt you read as expectedUpdatedAt so the user’s own',
-  'edits are never overwritten) and add entries with create_bible_section.',
+  'update_bible_section, which changes an entry’s content, the summary on its card, or both (pass',
+  'the updatedAt you read as expectedUpdatedAt so the user’s own edits are never overwritten),',
+  'and add entries with create_bible_section.',
   'Chapter content is Markdown prose. Do not repeat the chapter',
   'title as a heading inside the content, and never include notes to the user in chapter text.',
   'Chapters may carry performance notes for the voice that reads the book aloud, written in',
@@ -636,11 +637,22 @@ export const AGENT_TOOLS: AgentTool[] = [
     name: 'update_bible_section',
     title: 'Update story bible section',
     description:
-      'Replace the full Markdown content of one story bible entry. Nothing else changes: not its name, summary, category, or any other entry. Storybound keeps no bible history, so the response includes the previous content. Pass expectedUpdatedAt (the updatedAt you last read); if the user has edited the entry since, nothing is changed and the current version is returned instead.',
+      'Change one story bible entry: its full Markdown content, the short summary shown on its card, or both. Pass at least one; what you leave out stays as it is. When new content makes the summary out of date, update the summary in the same call. Nothing else changes: not its name, category, or any other entry. Storybound keeps no bible history, so the response includes the previous content and summary. Pass expectedUpdatedAt (the updatedAt you last read); if the user has edited the entry since, nothing is changed and the current version is returned instead.',
     schema: z.object({
       bookId: bookIdSchema,
       sectionId: z.uuid().describe('The sectionId returned by get_bible or create_bible_section.'),
-      content: z.string().max(2_000_000).describe('The complete new content, in Markdown.'),
+      content: z
+        .string()
+        .max(2_000_000)
+        .optional()
+        .describe('The complete new content, in Markdown. Leave out to keep the content.'),
+      summary: z
+        .string()
+        .max(20_000)
+        .optional()
+        .describe(
+          'The new one or two sentence summary shown on the entry’s card. Leave out to keep it.'
+        ),
       expectedUpdatedAt: z
         .string()
         .max(64)
@@ -654,6 +666,12 @@ export const AGENT_TOOLS: AgentTool[] = [
       openWorldHint: false
     },
     run: (store, input) => {
+      if (input.content === undefined && input.summary === undefined) {
+        throw new StoryboundError(
+          'VALIDATION_ERROR',
+          'Pass content, summary, or both: there was nothing to change.'
+        )
+      }
       const book = store.getBook(input.bookId)
       const current = requireBibleSection(store, book.id, input.sectionId)
       if (
@@ -670,7 +688,9 @@ export const AGENT_TOOLS: AgentTool[] = [
           })
         }
       }
-      if (current.bodyMarkdown === input.content) {
+      const content = input.content ?? current.bodyMarkdown
+      const summary = input.summary ?? current.summary
+      if (current.bodyMarkdown === content && current.summary === summary) {
         return {
           text: json({
             updated: false,
@@ -679,12 +699,13 @@ export const AGENT_TOOLS: AgentTool[] = [
           })
         }
       }
-      const updated = store.updateStoryEntity({ id: current.id, bodyMarkdown: input.content })
+      const updated = store.updateStoryEntity({ id: current.id, bodyMarkdown: content, summary })
       return {
         text: json({
           updated: true,
           section: describeBibleSection(store, updated),
           previousContent: current.bodyMarkdown,
+          previousSummary: current.summary,
           previousUpdatedAt: current.updatedAt
         }),
         change: {
@@ -699,7 +720,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     name: 'create_bible_section',
     title: 'Create story bible section',
     description:
-      'Add a new entry to a book’s story bible. It is filed under Other unless you choose a category. Refuses a name that already exists in this book’s bible unless allowDuplicateName is true; use update_bible_section to change an existing entry.',
+      'Add a new entry to a book’s story bible. It is filed under Other unless you choose a category. Refuses a name that already exists in this book’s bible unless allowDuplicateName is true; use update_bible_section to change an existing entry’s content or summary.',
     schema: z.object({
       bookId: bookIdSchema,
       name: titleSchema.describe('The entry name, for example a character’s name.'),

@@ -445,6 +445,68 @@ describe('story bible tools', () => {
     expect(store.getStoryEntity(harbour).bodyMarkdown).toBe('Cold, loud, always wet.')
   })
 
+  it('changes an entry’s card summary, with or without its content', async () => {
+    const { store, bookId, mara } = await bookWithBible()
+    const summaryOnly = callTool(store, 'update_bible_section', {
+      bookId,
+      sectionId: mara,
+      summary: 'The accountant who found the second ledger.'
+    })
+    expect(summaryOnly).toMatchObject({
+      updated: true,
+      previousSummary: 'The harbour accountant.',
+      section: {
+        summary: 'The accountant who found the second ledger.',
+        content: 'Grew up above the chandlery.'
+      }
+    })
+
+    callTool(store, 'update_bible_section', {
+      bookId,
+      sectionId: mara,
+      content: 'Keeps two ledgers.',
+      summary: '2 of 20'
+    })
+    expect(store.getStoryEntity(mara)).toMatchObject({
+      title: 'Mara Quill',
+      summary: '2 of 20',
+      bodyMarkdown: 'Keeps two ledgers.'
+    })
+  })
+
+  it('leaves the summary alone when only the content changes, and can clear it', async () => {
+    const { store, bookId, mara } = await bookWithBible()
+    callTool(store, 'update_bible_section', { bookId, sectionId: mara, content: 'New.' })
+    expect(store.getStoryEntity(mara).summary).toBe('The harbour accountant.')
+    callTool(store, 'update_bible_section', { bookId, sectionId: mara, summary: '' })
+    expect(store.getStoryEntity(mara).summary).toBe('')
+  })
+
+  it('says so when there is nothing to change, and never overwrites a newer summary', async () => {
+    const { store, bookId, mara } = await bookWithBible()
+    expect(() => callTool(store, 'update_bible_section', { bookId, sectionId: mara })).toThrow(
+      /nothing to change/
+    )
+    expect(
+      callTool(store, 'update_bible_section', {
+        bookId,
+        sectionId: mara,
+        summary: 'The harbour accountant.'
+      })
+    ).toMatchObject({ updated: false, unchanged: true })
+
+    store.updateStoryEntity({ id: mara, summary: 'Edited by the user.' })
+    expect(
+      callTool(store, 'update_bible_section', {
+        bookId,
+        sectionId: mara,
+        summary: 'Claude’s stale line.',
+        expectedUpdatedAt: '2000-01-01T00:00:00.000Z'
+      })
+    ).toMatchObject({ updated: false, conflict: true })
+    expect(store.getStoryEntity(mara).summary).toBe('Edited by the user.')
+  })
+
   it('refuses to overwrite an entry edited since it was read and returns the current version', async () => {
     const { store, bookId, mara } = await bookWithBible()
     store.updateStoryEntity({ id: mara, bodyMarkdown: 'Edited by the user in the app.' })
