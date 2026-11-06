@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./bookstore": "./src/bookstore.ts",
     "./sync": "./src/sync.ts",
     "./validation": "./src/validation.ts"
   },

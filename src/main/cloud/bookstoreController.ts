@@ -2,14 +2,18 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import {
+  addedBookSchema,
   BOOKSTORE_ADDRESS_PREFIX,
+  bookstoreServerMessage,
   browseStoreSchema,
+  checkedBooksSchema,
   myListingSchema,
   reviewItemSchema,
   storeListingSchema,
   storePageSchema,
   storeProfileSchema,
   storeReportSchema,
+  type AddedBook,
   type BookstoreCheckResult,
   type BookstoreStatus,
   type BrowseStoreInput,
@@ -42,25 +46,6 @@ const BUCKET = 'bookstore-books'
 /** The bucket's limit. */
 const MAX_FILE_BYTES = 30 * 1024 * 1024
 
-const addedBookSchema = z.object({
-  listingId: z.uuid(),
-  version: z.number().int(),
-  authorName: z.string(),
-  filePath: z.string(),
-  sha256: z.string()
-})
-type AddedBook = z.infer<typeof addedBookSchema>
-
-const checkedBookSchema = z.object({
-  listingId: z.uuid(),
-  status: z.string(),
-  version: z.number().int().nullable(),
-  authorName: z.string().nullable(),
-  filePath: z.string().nullable(),
-  sha256: z.string().nullable(),
-  removalReason: z.string().nullable()
-})
-
 export interface BookstoreAccess {
   client: SupabaseClient
   userId: string
@@ -79,24 +64,7 @@ export interface BookstoreDependencies {
 
 /** Turns what the server says into words a person can act on. */
 function networkError(message: string, error: { message?: string } | null): StoryboundError {
-  const detail = error?.message ?? ''
-  const known = [
-    'Accept the Bookstore terms first',
-    'The Bookstore terms have changed',
-    'This account can no longer use the Bookstore',
-    'A pen name needs 2 to 60 characters',
-    'That pen name is taken',
-    'That book is not in the Bookstore',
-    'This is your own book',
-    'Choose a pen name first',
-    'You can publish one new book a week',
-    'This book was removed from the Bookstore',
-    'Too many versions of this book today',
-    'Say why it was not approved',
-    'Say why it was removed',
-    'That version is not waiting',
-    'Not allowed'
-  ].find((text) => detail.includes(text))
+  const known = bookstoreServerMessage(error?.message ?? '')
   return new StoryboundError(known ? 'CONFLICT' : 'NETWORK_ERROR', known ?? message, error)
 }
 
@@ -333,10 +301,12 @@ export class StoryboundBookstoreController {
   /** Brings the reader's copies up to date, and takes back any removed for breaking the rules. */
   async checkBooks(): Promise<BookstoreCheckResult> {
     const result: BookstoreCheckResult = { updated: [], removed: [] }
-    const books = this.store.listBookstoreBooks()
-    if (!books.length) return result
+    if (!this.store.listBookstoreBooks().length) return result
     const access = await this.sync.accountAccess()
     if (!access) return result
+    // Another device may already have fetched an update, and two copies of one would conflict.
+    await this.sync.syncNow().catch(() => undefined)
+    const books = this.store.listBookstoreBooks()
     const profile = storeProfileSchema.parse(
       await this.call(
         access,
@@ -346,16 +316,14 @@ export class StoryboundBookstoreController {
       )
     )
     if (!profile.joined) return result
-    const checked = z
-      .array(checkedBookSchema)
-      .parse(
-        await this.call(
-          access,
-          'check_storybound_books',
-          { p_listing_ids: books.map((book) => book.listingId) },
-          'The Bookstore could not be reached.'
-        )
+    const checked = checkedBooksSchema.parse(
+      await this.call(
+        access,
+        'check_storybound_books',
+        { p_listing_ids: books.map((book) => book.listingId) },
+        'The Bookstore could not be reached.'
       )
+    )
     for (const item of checked) {
       const book = books.find((candidate) => candidate.listingId === item.listingId)
       if (!book) continue

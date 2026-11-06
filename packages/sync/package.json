@@ -8,7 +8,8 @@
     "./annotationAnchors": "./src/annotationAnchors.ts",
     "./canonical": "./src/canonical.ts",
     "./crypto": "./src/crypto.ts",
-    "./deviceLink": "./src/deviceLink.ts"
+    "./deviceLink": "./src/deviceLink.ts",
+    "./sharedIds": "./src/sharedIds.ts"
   },
   "types": "./src/index.ts",
   "dependencies": {

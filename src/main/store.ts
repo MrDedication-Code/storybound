@@ -24,7 +24,7 @@ import {
   createLibraryBackupManifest,
   libraryBackupManifestSchema
 } from '../shared/portable'
-import { canonicalJson, sharedContentHash } from '@storybound/sync'
+import { canonicalJson, sharedContentHash, sharedEntityId } from '@storybound/sync'
 import { BOOKSTORE_ADDRESS_PREFIX } from '../shared/bookstore'
 import type {
   BookShare,
@@ -660,17 +660,7 @@ function sharedChapterHash(title: string, content: string): string {
   return sharedContentHash(`${title}\u0000${content}`)
 }
 
-/**
- * A shared book's ids are worked out from the share and the sender's ids, so every device of the
- * recipient recognises the same chapter, and two people's copies can never collide.
- */
-export function sharedEntityId(shareId: string, sourceId: string): string {
-  const hash = createHash('sha256').update(`storybound-share:${shareId}:${sourceId}`).digest()
-  hash[6] = (hash[6] & 0x0f) | 0x50
-  hash[8] = (hash[8] & 0x3f) | 0x80
-  const hex = hash.subarray(0, 16).toString('hex')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
+export { sharedEntityId }
 
 function now(): string {
   return new Date().toISOString()

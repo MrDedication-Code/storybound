@@ -24,6 +24,7 @@ import {
 } from '../../domain/contracts'
 import { clamp, quoteText } from '../../domain/reading'
 import { countWords, recordChange } from './changeRecords'
+import { createBookstoreOperations } from './bookstoreRepository'
 import {
   createEditingOperations,
   requireEditableBook,
@@ -320,6 +321,7 @@ export function createSQLiteRepository(
   const editing = createEditingOperations(database, now, writes, createId)
   const repository: MobileRepository = {
     ...editing,
+    ...createBookstoreOperations(database, now, writes, createId),
 
     async createBook(input) {
       return repository.getBook(await editing.createBook(input))

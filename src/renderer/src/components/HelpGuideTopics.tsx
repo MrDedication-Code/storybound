@@ -430,6 +430,11 @@ export function BookstoreGuide(): React.JSX.Element {
           <strong>Your account:</strong> you can delete it in <strong>Settings</strong>. Your books
           stay on this device, and anything you published leaves the Bookstore.
         </li>
+        <li>
+          <strong>Phones:</strong> tap the shelf button at the top of your library to browse and add
+          books. Publishing is done on a computer. A book added on the phone reaches your computer
+          through sync, but its cover image doesn’t: add it there too to see the cover.
+        </li>
       </ul>
     </div>
   )

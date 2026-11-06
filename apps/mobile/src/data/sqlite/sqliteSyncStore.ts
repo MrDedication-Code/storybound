@@ -91,6 +91,22 @@ function deletionValue(value: unknown): { deletedAt: string; rowVersion: number 
   return { deletedAt: row.deletedAt, rowVersion: row.rowVersion }
 }
 
+/**
+ * A computer replaces all of a book's share details from any record that has them, and books that
+ * reached the phone before it kept them all have only some. Those leave the details out, so a
+ * change here never clears them.
+ */
+function withoutUnknownShare(row: Record<string, unknown>): Record<string, unknown> {
+  if (row.share_id !== null) return row
+  const known = { ...row }
+  delete known.share_id
+  delete known.share_sender_name
+  delete known.share_sender_address
+  delete known.share_mode
+  delete known.share_sequence
+  return known
+}
+
 export class SQLiteSyncStore {
   constructor(
     private readonly database: SqlDatabasePort,
@@ -531,11 +547,12 @@ export class SQLiteSyncStore {
                 COALESCE(source_url, '') AS source_url,
                 COALESCE(personal_notes, '') AS personal_notes,
                 rating, favourited_at, pinned_at, COALESCE(series_name, '') AS series_name,
-                series_position, cover_style, cover_position_x, cover_position_y, library_id
+                series_position, cover_style, cover_position_x, cover_position_y, library_id,
+                share_id, share_sender_name, share_sender_address, share_mode, share_sequence
          FROM books WHERE id = ?`,
         [entityId]
       )
-      if (row) return row
+      if (row) return withoutUnknownShare(row)
     } else if (entityType === 'chapter') {
       const row = await database.getFirstAsync<Record<string, unknown>>(
         `SELECT id, book_id, title, content, position, created_at, updated_at,
@@ -703,8 +720,16 @@ export class SQLiteSyncStore {
       )
       if ('share_mode' in value) {
         await transaction.runAsync(
-          'UPDATE books SET share_sender_name = ?, share_mode = ? WHERE id = ?',
-          [value.share_sender_name, value.share_mode, change.entityId]
+          `UPDATE books SET share_sender_name = ?, share_mode = ?, share_id = ?,
+             share_sender_address = ?, share_sequence = ? WHERE id = ?`,
+          [
+            value.share_sender_name,
+            value.share_mode,
+            value.share_id ?? null,
+            value.share_sender_address ?? null,
+            value.share_sequence ?? 0,
+            change.entityId
+          ]
         )
       }
       return

@@ -1,6 +1,14 @@
 import type { DeviceLinkState, SyncRuntimeStatus } from '@storybound/contracts'
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native'
 import { AppHeader } from '../components/AppHeader'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
@@ -278,6 +286,30 @@ export function SyncSettingsScreen({
                   await controller.signOut()
                   setNotice('Signed out. Local stories remain on this device.')
                 })
+              }
+            />
+            <PrimaryButton
+              disabled={busy}
+              label="Delete account"
+              style={styles.secondaryAction}
+              variant="quiet"
+              onPress={() =>
+                Alert.alert(
+                  'Delete your account?',
+                  'This removes your account, your synced data and your published books from the server. It can’t be undone. The books on this phone stay here.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete my account',
+                      style: 'destructive',
+                      onPress: () =>
+                        void perform(async () => {
+                          await controller.deleteAccount()
+                          setNotice('Your account was deleted. Your books are still on this phone.')
+                        })
+                    }
+                  ]
+                )
               }
             />
           </View>

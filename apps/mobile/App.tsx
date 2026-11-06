@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   BackHandler,
   Dimensions,
   Platform,
@@ -10,6 +11,7 @@ import {
   useColorScheme,
   useWindowDimensions
 } from 'react-native'
+import { MobileBookstore } from './src/bookstore/mobileBookstore'
 import { ListeningBar } from './src/components/ListeningBar'
 import { ErrorScreen, LoadingScreen } from './src/components/ScreenState'
 import { sharedRepository } from './src/data/sqlite/sharedRepository'
@@ -20,6 +22,8 @@ import {
   type MobileRoute
 } from './src/domain/contracts'
 import { BookDetailScreen } from './src/screens/BookDetailScreen'
+import { BookstoreBookScreen } from './src/screens/BookstoreBookScreen'
+import { BookstoreScreen } from './src/screens/BookstoreScreen'
 import { EditorScreen } from './src/screens/EditorScreen'
 import { LibraryScreen } from './src/screens/LibraryScreen'
 import { ListeningSettingsScreen } from './src/screens/ListeningSettingsScreen'
@@ -29,6 +33,8 @@ import { statusBarHeight } from './src/statusBar'
 import { createMobileSyncRuntime } from './src/sync/runtime'
 import type { MobileSyncController, MobileSyncRuntime } from './src/sync/types'
 import { storyboundColors } from './src/theme'
+
+const CHECK_DELAY_MILLISECONDS = 15_000
 
 /**
  * Android draws apps edge to edge, under the status bar and the gesture or button bar, and
@@ -137,6 +143,29 @@ function StoryboundApp({
     }
   }, [repository])
 
+  const bookstore = useMemo(
+    () => new MobileBookstore(repository, syncController),
+    [repository, syncController]
+  )
+
+  // Keeps Bookstore books up to date. Being offline or signed out is no reason to interrupt.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void bookstore
+        .checkBooks()
+        .then(({ removed }) => {
+          for (const book of removed) {
+            Alert.alert(
+              `“${book.title}” was removed`,
+              `It left the Bookstore and moved to Trash. ${book.reason}`.trim()
+            )
+          }
+        })
+        .catch(() => undefined)
+    }, CHECK_DELAY_MILLISECONDS)
+    return () => clearTimeout(timer)
+  }, [bookstore])
+
   const changePreferences = useCallback(
     (changes: Partial<MobilePreferences>): void => {
       setPreferences((current) => (current ? { ...current, ...changes } : current))
@@ -193,6 +222,7 @@ function StoryboundApp({
           repository={repository}
           onChangeMode={(mode) => changePreferences({ mode })}
           onOpenBook={(bookId) => push({ name: 'book', bookId })}
+          onOpenBookstore={() => push({ name: 'bookstore' })}
           onOpenListening={() => push({ name: 'listening-settings' })}
           onOpenSync={() => push({ name: 'sync-settings' })}
         />
@@ -246,6 +276,26 @@ function StoryboundApp({
       break
     case 'listening-settings':
       screen = <ListeningSettingsScreen onBack={back} />
+      break
+    case 'bookstore':
+      screen = (
+        <BookstoreScreen
+          bookstore={bookstore}
+          controller={syncController}
+          onBack={back}
+          onOpenBook={(listingId) => push({ name: 'bookstore-book', listingId })}
+        />
+      )
+      break
+    case 'bookstore-book':
+      screen = (
+        <BookstoreBookScreen
+          bookstore={bookstore}
+          listingId={route.listingId}
+          onBack={back}
+          onOpenBook={(bookId) => replace({ name: 'book', bookId })}
+        />
+      )
       break
   }
 

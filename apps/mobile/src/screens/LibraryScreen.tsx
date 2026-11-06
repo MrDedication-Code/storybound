@@ -24,6 +24,7 @@ export function LibraryScreen({
   onChangeMode,
   onOpenBook,
   onOpenSync,
+  onOpenBookstore,
   onOpenListening
 }: {
   repository: MobileRepository
@@ -31,6 +32,7 @@ export function LibraryScreen({
   onChangeMode: (mode: AppMode) => void
   onOpenBook: (bookId: string) => void
   onOpenSync: () => void
+  onOpenBookstore: () => void
   onOpenListening: () => void
 }): React.JSX.Element {
   const [books, setBooks] = useState<BookSummary[] | null>(null)
@@ -86,6 +88,19 @@ export function LibraryScreen({
           <Text style={styles.wordmark}>Storybound</Text>
           <Text style={styles.localLabel}>{mode === 'reader' ? 'Reader mode' : 'Editor mode'}</Text>
         </View>
+        <Pressable
+          accessibilityLabel="Open the Bookstore"
+          accessibilityRole="button"
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.syncButton,
+            styles.listenButton,
+            pressed && styles.pressed
+          ]}
+          onPress={onOpenBookstore}
+        >
+          <Text style={styles.syncGlyph}>▤</Text>
+        </Pressable>
         <Pressable
           accessibilityLabel="Open listening settings"
           accessibilityRole="button"

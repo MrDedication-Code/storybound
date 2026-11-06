@@ -49,7 +49,13 @@ import {
 } from './rpcContract'
 import { ChunkedSecureStorage } from './secureStore'
 import { connectionPhase } from './state'
-import type { MobileSyncController, RemoteSyncEntityType, VaultCredentials } from './types'
+import type { PasswordResetInput } from '@storybound/contracts'
+import type {
+  AccountAccess,
+  MobileSyncController,
+  RemoteSyncEntityType,
+  VaultCredentials
+} from './types'
 
 const VAULT_CREDENTIAL_KEY = 'storybound.vault.v1'
 const DEFAULT_DEVICE_NAME = 'Storybound mobile'
@@ -259,6 +265,56 @@ export class StoryboundMobileSyncController implements MobileSyncController {
   async signOut(): Promise<SyncRuntimeStatus> {
     const { error } = await this.requireClient().auth.signOut({ scope: 'local' })
     if (error) throw new Error(error.message)
+    this.lastRuntimeError = null
+    return this.status()
+  }
+
+  isConfigured(): boolean {
+    return this.client !== null
+  }
+
+  async accountAccess(): Promise<AccountAccess | null> {
+    if (!this.client) return null
+    const { data } = await this.client.auth.getSession()
+    if (!data.session) return null
+    return {
+      client: this.client,
+      userId: data.session.user.id,
+      email: data.session.user.email ?? null
+    }
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    const { error } = await this.requireClient().auth.resetPasswordForEmail(email.trim())
+    if (error) throw new Error(error.message)
+  }
+
+  async resetPassword(input: PasswordResetInput): Promise<SyncRuntimeStatus> {
+    const client = this.requireClient()
+    const verified = await client.auth.verifyOtp({
+      email: input.email.trim(),
+      token: input.code.trim(),
+      type: 'recovery'
+    })
+    if (verified.error) throw new Error('That code did not work. Check it, or ask for a new one.')
+    const { error } = await client.auth.updateUser({ password: input.password })
+    if (error) throw new Error(error.message)
+    await this.restoreProfileForSession()
+    return this.status()
+  }
+
+  async deleteAccount(): Promise<SyncRuntimeStatus> {
+    const client = this.requireClient()
+    const session = await this.requireSession()
+    const withdrawn = await client.rpc('withdraw_all_storybound_listings')
+    if (withdrawn.error) throw new Error('The account could not be deleted.')
+    const bucket = client.storage.from('bookstore-books')
+    const { data: files } = await bucket.list(session.user.id, { limit: 1000 })
+    if (files?.length) await bucket.remove(files.map((file) => `${session.user.id}/${file.name}`))
+    const { error } = await client.rpc('delete_storybound_account')
+    if (error) throw new Error('The account could not be deleted.')
+    await this.requireStorage().removeItem(vaultCredentialKey(session.user.id))
+    await client.auth.signOut({ scope: 'local' })
     this.lastRuntimeError = null
     return this.status()
   }

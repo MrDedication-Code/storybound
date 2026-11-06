@@ -208,7 +208,13 @@ export function normalizeRemoteEntity(
         ...('share_mode' in row
           ? {
               share_sender_name: nullableString(row, 'share_sender_name'),
-              share_mode: shareMode(row)
+              share_mode: shareMode(row),
+              share_id: nullableString(row, 'share_id'),
+              share_sender_address: nullableString(row, 'share_sender_address'),
+              share_sequence:
+                'share_sequence' in row
+                  ? numberValue(row, 'share_sequence', 0, Number.MAX_SAFE_INTEGER, true)
+                  : 0
             }
           : {})
       }

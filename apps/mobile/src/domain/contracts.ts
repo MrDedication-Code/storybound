@@ -1,3 +1,5 @@
+import type { SharedBook } from '@storybound/contracts'
+
 export type BookStatus = 'ongoing' | 'completed'
 export type ReaderTheme = 'paper' | 'sepia' | 'night'
 
@@ -216,6 +218,29 @@ export const DEFAULT_PREFERENCES: MobilePreferences = {
   smartPunctuation: true
 }
 
+export interface BookstoreOrigin {
+  listingId: string
+  version: number
+  authorName: string
+}
+
+export interface ReceivedBookstoreBook {
+  bookId: string
+  title: string
+  /** This version, or a newer one, was already here. */
+  stale: boolean
+}
+
+/** A Bookstore book in the library, as the app checks it for updates and removals. */
+export interface BookstoreCopy {
+  bookId: string
+  listingId: string
+  title: string
+  authorName: string
+  version: number
+  deleted: boolean
+}
+
 export interface MobileRepository {
   listBooks(): Promise<BookSummary[]>
   listLibraries(): Promise<LibrarySummary[]>
@@ -253,6 +278,11 @@ export interface MobileRepository {
   mergeWithNextChapter(chapterId: string): Promise<Chapter>
   listChapterRevisions(chapterId: string): Promise<ChapterRevision[]>
   restoreChapterRevision(revisionId: string): Promise<Chapter>
+  /** Adds a Bookstore book, or brings it up to date. It is always read-only. */
+  receiveBookstoreBook(origin: BookstoreOrigin, book: SharedBook): Promise<ReceivedBookstoreBook>
+  listBookstoreBooks(): Promise<BookstoreCopy[]>
+  /** The book's id in this library, if it is here and not in Trash. */
+  findBookstoreBook(listingId: string): Promise<string | null>
   getSyncStatus(): Promise<LocalSyncStatus>
   getPreferences(): Promise<MobilePreferences>
   savePreferences(changes: Partial<MobilePreferences>): Promise<MobilePreferences>
@@ -265,3 +295,5 @@ export type MobileRoute =
   | { name: 'listening-settings' }
   | { name: 'editor'; bookId: string; chapterId: string }
   | { name: 'sync-settings' }
+  | { name: 'bookstore' }
+  | { name: 'bookstore-book'; listingId: string }
