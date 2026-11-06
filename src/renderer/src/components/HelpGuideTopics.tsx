@@ -490,7 +490,10 @@ export function ListeningGuide(): React.JSX.Element {
             </tr>
             <tr>
               <th scope="row">Free voice (Kokoro)</th>
-              <td>Everyday listening. Natural, private, and works offline after one download. Macs need macOS 14 or later.</td>
+              <td>
+                Everyday listening. Natural, private, and works offline after one download. Macs
+                need macOS 14 or later.
+              </td>
               <td>Free</td>
               <td>Skipped</td>
             </tr>
