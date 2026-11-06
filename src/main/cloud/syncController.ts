@@ -24,6 +24,7 @@ import type {
   SyncLinkRequestSummary,
   SyncRuntimeStatus
 } from '@storybound/contracts'
+import { ACCOUNT_EXISTS_MESSAGE, signUpFoundExistingAccount } from '@storybound/contracts'
 import type { SyncCredentialsInput } from '../../shared/types'
 import type { StoryboundStore } from '../store'
 import { StoryboundError } from '../errors'
@@ -183,6 +184,9 @@ export class StoryboundSyncController {
       password: input.password
     })
     if (error) throw new StoryboundError('NETWORK_ERROR', error.message, error)
+    if (signUpFoundExistingAccount(data.user)) {
+      throw new StoryboundError('CONFLICT', ACCOUNT_EXISTS_MESSAGE)
+    }
     if (!data.session) {
       throw new StoryboundError(
         'CONFLICT',

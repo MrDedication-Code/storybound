@@ -7,6 +7,9 @@ import { ErrorScreen, LoadingScreen } from '../components/ScreenState'
 import type { MobileSyncController } from '../sync/types'
 import { compactCaps, literaryHeading, storyboundColors, storyboundRadii } from '../theme'
 
+// A computer refuses anything shorter, so an account made here must work there too.
+const MINIMUM_PASSWORD = 10
+
 export function SyncSettingsScreen({
   controller,
   onBack,
@@ -154,6 +157,7 @@ export function SyncSettingsScreen({
               value={password}
               onChangeText={setPassword}
             />
+            <Text style={styles.passwordHint}>At least 10 characters.</Text>
             <PrimaryButton
               disabled={busy || !email.trim() || !password}
               label="Sign in"
@@ -166,7 +170,7 @@ export function SyncSettingsScreen({
               }
             />
             <PrimaryButton
-              disabled={busy || !email.trim() || !password}
+              disabled={busy || !email.trim() || password.length < MINIMUM_PASSWORD}
               label="Create account"
               style={styles.secondaryAction}
               variant="secondary"
@@ -492,6 +496,12 @@ function formatDate(value: string | null): string {
 }
 
 const styles = StyleSheet.create({
+  passwordHint: {
+    marginTop: -6,
+    marginBottom: 10,
+    color: storyboundColors.muted,
+    fontSize: 13
+  },
   screen: {
     flex: 1,
     backgroundColor: storyboundColors.paper

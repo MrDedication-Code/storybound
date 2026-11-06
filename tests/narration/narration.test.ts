@@ -1,3 +1,4 @@
+import { signUpFoundExistingAccount } from '@storybound/contracts'
 import { describe, expect, it } from 'vitest'
 import {
   base64ToBytes,
@@ -379,5 +380,14 @@ describe('Google voice', () => {
         '2026-11-06T08:00:00.000Z'
       )
     })
+  })
+})
+
+describe('signing up with an email that already has an account', () => {
+  it('is recognised from the server’s empty identities', () => {
+    expect(signUpFoundExistingAccount({ identities: [] })).toBe(true)
+    expect(signUpFoundExistingAccount({ identities: [{ id: 'one' }] })).toBe(false)
+    expect(signUpFoundExistingAccount({})).toBe(false)
+    expect(signUpFoundExistingAccount(null)).toBe(false)
   })
 })

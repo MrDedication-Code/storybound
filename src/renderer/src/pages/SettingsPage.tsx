@@ -647,6 +647,7 @@ export function SettingsPage({
                       value={syncPassword}
                       onChange={(event) => setSyncPassword(event.target.value)}
                     />
+                    <small>At least 10 characters.</small>
                   </label>
                   <div className="button-pair">
                     <Button

@@ -94,7 +94,11 @@ export class ParcelScene {
     rim.position.set(5, 1.5, -5)
     this.scene.add(rim)
 
-    const floor = new Mesh(new PlaneGeometry(30, 30), new ShadowMaterial({ opacity: 0.22 }))
+    // Only shadows are drawn, so nothing that passes it should be cut off by it.
+    const floor = new Mesh(
+      new PlaneGeometry(30, 30),
+      new ShadowMaterial({ opacity: 0.22, depthWrite: false })
+    )
     floor.position.z = -1.5
     floor.receiveShadow = true
     this.scene.add(floor)
@@ -184,11 +188,21 @@ export class ParcelScene {
       (value) => wrapping.setWrapped(1 - value)
     )
     const startTilt = this.parcel.rotation.y
-    await this.tween(760, easeInOut, (value) => {
-      wrapping.group.position.set(0, -value * 2.2, -value * 2.6)
-      wrapping.setOpacity(1 - value)
-      this.parcel.rotation.y = startTilt + (0 - startTilt) * value
+    // The paper drops away behind the book. A shadow cannot fade, so it loses its shadow first.
+    wrapping.group.traverse((item) => {
+      item.castShadow = false
     })
+    await this.tween(
+      820,
+      (value) => value,
+      (value) => {
+        const fall = value ** 2
+        wrapping.group.position.set(0, -fall * 7.5, -fall * 0.5)
+        wrapping.group.rotation.x = fall * 0.55
+        wrapping.setOpacity(1 - Math.max(0, value - 0.55) / 0.45)
+        this.parcel.rotation.y = startTilt + (0 - startTilt) * easeInOut(value)
+      }
+    )
     wrapping.group.visible = false
     await this.tween(1500, easeInOut, (value) => {
       this.parcel.rotation.y = value * Math.PI * 2

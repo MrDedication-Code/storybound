@@ -47,6 +47,7 @@ import {
   type RpcPushMutation,
   type RpcBootstrap
 } from './rpcContract'
+import { ACCOUNT_EXISTS_MESSAGE, signUpFoundExistingAccount } from '@storybound/contracts'
 import { ChunkedSecureStorage } from './secureStore'
 import { connectionPhase } from './state'
 import type { MobileSyncController, RemoteSyncEntityType, VaultCredentials } from './types'
@@ -243,6 +244,7 @@ export class StoryboundMobileSyncController implements MobileSyncController {
     this.lastRuntimeError = null
     const { data, error } = await client.auth.signUp({ email: email.trim(), password })
     if (error) throw new Error(error.message)
+    if (signUpFoundExistingAccount(data.user)) throw new Error(ACCOUNT_EXISTS_MESSAGE)
     if (data.session) await this.restoreProfileForSession()
     return this.status()
   }

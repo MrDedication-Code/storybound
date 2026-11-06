@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pcm16ToWav } from '@storybound/narration'
 import type { CredentialProtector } from '../../src/main/cloud/secureCredentials'
-import { NarrationController } from '../../src/main/narration/controller'
+import { kokoroUnsupportedReason, NarrationController } from '../../src/main/narration/controller'
 
 const protector: CredentialProtector = {
   isEncryptionAvailable: () => true,
@@ -185,5 +185,17 @@ describe('listening on the Mac', () => {
     })
     expect(speech()).toBe(2)
     expect(await narration.synthesize({ text: 'Heard before.', style: null })).toBeTruthy()
+  })
+})
+
+describe('the free voice on older Macs', () => {
+  it('says so before anything is downloaded', async () => {
+    expect(kokoroUnsupportedReason('darwin', '12.3.0')).toContain('needs macOS 14')
+    expect(kokoroUnsupportedReason('darwin', '13.7.1')).toContain('needs macOS 14')
+    expect(kokoroUnsupportedReason('darwin', '14.0')).toBeNull()
+    expect(kokoroUnsupportedReason('darwin', '26.1')).toBeNull()
+    expect(kokoroUnsupportedReason('win32', '10.0.26100')).toBeNull()
+    // If the version can't be read, the download is still offered.
+    expect(kokoroUnsupportedReason('darwin', '')).toBeNull()
   })
 })

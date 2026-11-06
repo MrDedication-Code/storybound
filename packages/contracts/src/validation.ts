@@ -47,6 +47,18 @@ export const syncPullResultSchema = z.object({
   hasMore: z.boolean()
 })
 
+export const ACCOUNT_EXISTS_MESSAGE = 'That email already has an account. Sign in instead.'
+
+/**
+ * When an email already has an account, the server answers as if signing up worked, sends nothing,
+ * and returns a user with no identities.
+ */
+export function signUpFoundExistingAccount(
+  user: { identities?: unknown[] | null } | null | undefined
+): boolean {
+  return user?.identities?.length === 0
+}
+
 export const syncCredentialsSchema = z.object({
   email: z.email().max(320),
   password: z.string().min(10).max(1024)
