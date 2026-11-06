@@ -24,11 +24,8 @@ import type {
   SyncLinkRequestSummary,
   SyncRuntimeStatus
 } from '@storybound/contracts'
-import {
-  ACCOUNT_EXISTS_MESSAGE,
-  signUpFoundExistingAccount,
-  type PasswordResetInput
-} from '../../shared/bookstore'
+import { ACCOUNT_EXISTS_MESSAGE, signUpFoundExistingAccount } from '@storybound/contracts'
+import type { PasswordResetInput } from '../../shared/bookstore'
 import type { SyncCredentialsInput } from '../../shared/types'
 import type { StoryboundStore } from '../store'
 import { StoryboundError } from '../errors'

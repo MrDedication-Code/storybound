@@ -47,13 +47,10 @@ import {
   type RpcPushMutation,
   type RpcBootstrap
 } from './rpcContract'
+import { ACCOUNT_EXISTS_MESSAGE, signUpFoundExistingAccount } from '@storybound/contracts'
 import { ChunkedSecureStorage } from './secureStore'
 import { connectionPhase } from './state'
-import {
-  ACCOUNT_EXISTS_MESSAGE,
-  signUpFoundExistingAccount,
-  type PasswordResetInput
-} from '@storybound/contracts'
+import type { PasswordResetInput } from '@storybound/contracts'
 import type {
   AccountAccess,
   MobileSyncController,

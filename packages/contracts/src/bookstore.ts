@@ -254,18 +254,6 @@ export function bookstoreServerMessage(detail: string): string | null {
   return SERVER_MESSAGES.find((message) => detail.includes(message)) ?? null
 }
 
-export const ACCOUNT_EXISTS_MESSAGE = 'That email already has an account. Sign in instead.'
-
-/**
- * When an email already has an account, the server answers as if signing up worked, sends nothing,
- * and returns a user with no identities.
- */
-export function signUpFoundExistingAccount(
-  user: { identities?: unknown[] | null } | null | undefined
-): boolean {
-  return user?.identities?.length === 0
-}
-
 export const passwordResetRequestSchema = z.object({ email: z.email() })
 
 export const passwordResetSchema = z.object({
